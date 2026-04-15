@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <AssemblyName>OstoraWeaponSkins</AssemblyName>
+    <OutputPath>$(MSBuildThisFileDirectory)build/</OutputPath>
+    <PublishDir>F:/cs2server/cs2/game/csgo/addons/swiftlys2/plugins/OstoraWeaponSkins</PublishDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FreeSql" Version="3.5.303" />
+    <PackageReference Include="FreeSql.Provider.MySql" Version="3.5.303" />
+    <PackageReference Include="FreeSql.Provider.Sqlite" Version="3.5.303" />
+    <PackageReference Include="FreeSql.Provider.PostgreSQL" Version="3.5.303" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <PackageReference Include="SwiftlyS2.CS2" Version="1.1.4" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="ValveKeyValue" Version="0.20.0.417" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="resources/gamedata/**/*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>
