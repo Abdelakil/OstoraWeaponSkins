@@ -22,11 +22,12 @@ public record SkinModel
     [Column(Name = "weapon_sticker_2")] public string Sticker2 { get; set; } = "0;0;0;0;0;0;0";
     [Column(Name = "weapon_sticker_3")] public string Sticker3 { get; set; } = "0;0;0;0;0;0;0";
     [Column(Name = "weapon_sticker_4")] public string Sticker4 { get; set; } = "0;0;0;0;0;0;0";
-    [Column(Name = "weapon_sticker_5")] public string Sticker5 { get; set; } = "0;0;0;0;0;0;0";
     [Column(Name = "weapon_keychain")] public string Keychain { get; set; } = "0;0;0;0;0";
 
     private static StickerData? ParseSticker(string s)
     {
+        if (string.IsNullOrEmpty(s)) return null;
+        
         var p = s.Split(';');
         if (p.Length < 7 || p[0] == "0") return null;
         return new StickerData
@@ -40,6 +41,8 @@ public record SkinModel
 
     private static KeychainData? ParseKeychain(string s)
     {
+        if (string.IsNullOrEmpty(s)) return null;
+        
         var p = s.Split(';');
         if (p.Length < 5 || p[0] == "0") return null;
         return new KeychainData
@@ -60,7 +63,7 @@ public record SkinModel
         StattrakCount = StattrakCount,
         Sticker0 = ParseSticker(Sticker0), Sticker1 = ParseSticker(Sticker1),
         Sticker2 = ParseSticker(Sticker2), Sticker3 = ParseSticker(Sticker3),
-        Sticker4 = ParseSticker(Sticker4), Sticker5 = ParseSticker(Sticker5),
+        Sticker4 = ParseSticker(Sticker4),
         Keychain0 = ParseKeychain(Keychain),
     };
 

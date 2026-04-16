@@ -40,6 +40,9 @@ public class OstoraWeaponSkins : BasePlugin
     // ── Agent models (parsed from items_game.txt) ───────────────
     private static readonly Dictionary<int, string> AgentModels = new();
 
+    // Sticker validation tracking (without caching)
+    private readonly Dictionary<ulong, Dictionary<int, int>> _stickerHashes = new();
+
     public OstoraWeaponSkins(ISwiftlyCore core) : base(core) { }
 
     // ================================================================
@@ -103,19 +106,62 @@ public class OstoraWeaponSkins : BasePlugin
 
         // If not cached yet, load from DB
         if (!_weaponCache.ContainsKey(player.SteamID))
-            LoadAndApplyPlayer(player);
-        else
-            ApplyAllVisuals(player);
-
-        // Re-apply after a short delay (engine may overwrite visuals)
-        Core.Scheduler.DelayBySeconds(0.1f, () =>
         {
-            if (!player.IsAlive) return;
-            ApplyGloveVisual(player);
-            ApplyAgentVisual(player);
-        });
+            LoadAndApplyPlayer(player);
+        }
+        else
+        {
+            // Already cached - use refresh approach (same as ws_refreshskins command)
+            RefreshPlayerVisuals(player);
+        }
 
         return HookResult.Continue;
+    }
+
+    // ================================================================
+    //  REFRESH PLAYER VISUALS (used for spawn when already cached)
+    // ================================================================
+    private void RefreshPlayerVisuals(IPlayer player)
+    {
+        var steamId = player.SteamID;
+
+        if (!_inventories.TryGetValue(steamId, out var inv)) return;
+        if (!_weaponCache.TryGetValue(steamId, out var weapons)) return;
+        if (!_knifeCache.TryGetValue(steamId, out var knives)) return;
+        if (!_gloveCache.TryGetValue(steamId, out var gloves)) return;
+        if (!_musicCache.TryGetValue(steamId, out var music)) return;
+
+        // Update inventory loadout
+        foreach (var w in weapons) inv.UpdateWeaponSkin(w);
+        foreach (var k in knives) inv.UpdateKnifeSkin(k);
+        foreach (var g in gloves) inv.UpdateGloveSkin(g);
+        var musicForTeam = music.FirstOrDefault(m => m.Team == player.Controller.Team);
+        if (musicForTeam != null) inv.UpdateMusicKit(musicForTeam.MusicID);
+
+        // Apply visuals after inventory updates settle (2 ticks)
+        Core.Scheduler.NextWorldUpdate(() =>
+        {
+            Core.Scheduler.NextWorldUpdate(() =>
+            {
+                if (!player.IsAlive) return;
+
+                // Regive all held weapons (forces fresh entities with correct attributes)
+                RegivePlayerWeapons(player);
+
+                // Apply glove visual
+                ApplyGloveVisual(player);
+
+                // Apply agent visual
+                ApplyAgentVisual(player);
+
+                // Auto-refresh after 0.5s to fix glove textures
+                Core.Scheduler.DelayBySeconds(0.5f, () =>
+                {
+                    if (!player.IsAlive) return;
+                    ApplyGloveVisual(player);
+                });
+            });
+        });
     }
 
     // ================================================================
@@ -141,7 +187,7 @@ public class OstoraWeaponSkins : BasePlugin
     }
 
     // ================================================================
-    //  LOAD FROM DB + APPLY
+    //  LOAD FROM DB + APPLY (uses refresh command logic)
     // ================================================================
     private void LoadAndApplyPlayer(IPlayer player)
     {
@@ -164,7 +210,11 @@ public class OstoraWeaponSkins : BasePlugin
 
                 Core.Scheduler.NextWorldUpdate(() =>
                 {
-                    if (!_inventories.TryGetValue(steamId, out var inv)) return;
+                    if (!_inventories.TryGetValue(steamId, out var inv))
+                    {
+                        Logger.LogWarning("[OSTORA] No inventory for {SteamID} on spawn", steamId);
+                        return;
+                    }
 
                     // Update inventory loadout for all items
                     foreach (var w in weapons) inv.UpdateWeaponSkin(w);
@@ -173,11 +223,31 @@ public class OstoraWeaponSkins : BasePlugin
                     var musicForTeam = music.FirstOrDefault(m => m.Team == player.Controller.Team);
                     if (musicForTeam != null) inv.UpdateMusicKit(musicForTeam.MusicID);
 
-                    // Apply visuals after inventory updates settle
+                    // Apply visuals after inventory updates settle (2 ticks - same as refresh command)
                     Core.Scheduler.NextWorldUpdate(() =>
                     {
-                        if (!player.IsAlive) return;
-                        ApplyAllVisuals(player);
+                        Core.Scheduler.NextWorldUpdate(() =>
+                        {
+                            if (!player.IsAlive) return;
+
+                            // Regive all held weapons (forces fresh entities with correct attributes)
+                            RegivePlayerWeapons(player);
+
+                            // Apply glove visual
+                            ApplyGloveVisual(player);
+
+                            // Apply agent visual
+                            ApplyAgentVisual(player);
+
+                            Logger.LogInformation("[OSTORA] Spawn load complete for {SteamID}", steamId);
+
+                            // Auto-refresh after 0.5s to fix glove textures
+                            Core.Scheduler.DelayBySeconds(0.5f, () =>
+                            {
+                                if (!player.IsAlive) return;
+                                ApplyGloveVisual(player);
+                            });
+                        });
                     });
                 });
             }
@@ -378,6 +448,8 @@ public class OstoraWeaponSkins : BasePlugin
     // ================================================================
     private void ApplyWeaponAttributes(CBasePlayerWeapon weapon, WeaponSkinData skin)
     {
+        FixSticker(skin);
+        
         var item = weapon.AttributeManager.Item;
         item.ItemDefinitionIndex = skin.DefinitionIndex;
         item.EntityQuality = (int)skin.Quality;
@@ -399,20 +471,30 @@ public class OstoraWeaponSkins : BasePlugin
 
         if (skin.Nametag != null) item.CustomName = skin.Nametag;
 
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < 5; i++)
         {
             var sticker = skin.GetSticker(i);
             if (sticker == null) continue;
-            item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} id", BitConverter.Int32BitsToSingle(sticker.Id));
+            
+            var stickerIdFloat = BitConverter.Int32BitsToSingle(sticker.Id);
+            item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} id", stickerIdFloat);
+            item.AttributeList.SetOrAddAttribute($"sticker slot {i} id", stickerIdFloat);
+            
             if (sticker.Schema != 1337)
             {
-                item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} schema", BitConverter.Int32BitsToSingle(sticker.Schema));
+                var schemaFloat = BitConverter.Int32BitsToSingle(sticker.Schema);
+                item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} schema", schemaFloat);
                 item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} offset x", sticker.OffsetX);
                 item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} offset y", sticker.OffsetY);
             }
+            
             item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} wear", sticker.Wear);
             item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} scale", sticker.Scale);
             item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} rotation", sticker.Rotation);
+            
+            item.AttributeList.SetOrAddAttribute($"sticker slot {i} wear", sticker.Wear);
+            item.AttributeList.SetOrAddAttribute($"sticker slot {i} scale", sticker.Scale);
+            item.AttributeList.SetOrAddAttribute($"sticker slot {i} rotation", sticker.Rotation);
         }
 
         var keychain = skin.Keychain0;
@@ -618,9 +700,17 @@ public class OstoraWeaponSkins : BasePlugin
                     {
                         Core.Scheduler.NextWorldUpdate(() =>
                         {
-                            pawn.WeaponServices!.RemoveWeaponBySlot(gear_slot_t.GEAR_SLOT_KNIFE);
-                            pawn.ItemServices!.GiveItem("weapon_knife");
-                            pawn.WeaponServices!.SelectWeaponBySlot(gear_slot_t.GEAR_SLOT_KNIFE);
+                            try
+                            {
+                                if (!player.IsAlive) return;
+                                pawn.WeaponServices!.RemoveWeaponBySlot(gear_slot_t.GEAR_SLOT_KNIFE);
+                                pawn.ItemServices!.GiveItem("weapon_knife");
+                                pawn.WeaponServices!.SelectWeaponBySlot(gear_slot_t.GEAR_SLOT_KNIFE);
+                            }
+                            catch (Exception e)
+                            {
+                                Logger.LogDebug("[OSTORA] Failed to regive knife: {Message}", e.Message);
+                            }
                         });
                     }
                 }
@@ -634,21 +724,31 @@ public class OstoraWeaponSkins : BasePlugin
                     {
                         var defIdx = skin.DefinitionIndex;
                         var weaponRef = weapon;
+                        var clip1 = weapon.Clip1;
+                        var reservedAmmo = weapon.ReserveAmmo[0];
                         Core.Scheduler.NextWorldUpdate(() =>
                         {
-                            if (defIdx == Core.Helpers.GetDefinitionIndexByClassname("weapon_taser"))
+                            try
                             {
-                                RegiveWeaponTaser(player, weaponRef);
+                                if (!player.IsAlive) return;
+                                if (!weaponRef.IsValid) return;
+
+                                if (defIdx == Core.Helpers.GetDefinitionIndexByClassname("weapon_taser"))
+                                {
+                                    RegiveWeaponTaser(player, weaponRef, clip1, reservedAmmo);
+                                }
+                                else
+                                {
+                                    var name = Core.Helpers.GetClassnameByDefinitionIndex(defIdx)!;
+                                    pawn.WeaponServices!.RemoveWeapon(weaponRef);
+                                    var newWeapon = pawn.ItemServices!.GiveItem<CBasePlayerWeapon>(name);
+                                    newWeapon.Clip1 = clip1;
+                                    newWeapon.ReserveAmmo[0] = reservedAmmo;
+                                }
                             }
-                            else
+                            catch (Exception e)
                             {
-                                var name = Core.Helpers.GetClassnameByDefinitionIndex(defIdx)!;
-                                var clip1 = weaponRef.Clip1;
-                                var reservedAmmo = weaponRef.ReserveAmmo[0];
-                                pawn.WeaponServices!.RemoveWeapon(weaponRef);
-                                var newWeapon = pawn.ItemServices!.GiveItem<CBasePlayerWeapon>(name);
-                                newWeapon.Clip1 = clip1;
-                                newWeapon.ReserveAmmo[0] = reservedAmmo;
+                                Logger.LogDebug("[OSTORA] Failed to regive weapon: {Message}", e.Message);
                             }
                         });
                     }
@@ -657,20 +757,83 @@ public class OstoraWeaponSkins : BasePlugin
         }
     }
 
-    private void RegiveWeaponTaser(IPlayer player, CBasePlayerWeapon weapon)
+    private void RegiveWeaponTaser(IPlayer player, CBasePlayerWeapon weapon, int clip1, int reservedAmmo)
     {
-        var pawn = player.PlayerPawn!;
-        var taser = weapon.As<CWeaponTaser>();
-        var clip1 = taser.Clip1;
-        var reservedAmmo = taser.ReserveAmmo[0];
-        var fireTime = taser.FireTime.Value;
-        var lastAttackTick = taser.LastAttackTick;
-        pawn.WeaponServices!.RemoveWeapon(weapon);
-        var newWeapon = pawn.ItemServices!.GiveItem<CWeaponTaser>("weapon_taser");
-        newWeapon.Clip1 = clip1;
-        newWeapon.ReserveAmmo[0] = reservedAmmo;
-        newWeapon.FireTime.Value = fireTime;
-        newWeapon.LastAttackTick = lastAttackTick;
+        try
+        {
+            var pawn = player.PlayerPawn!;
+            if (!weapon.IsValid) return;
+
+            var taser = weapon.As<CWeaponTaser>();
+            var fireTime = taser.FireTime.Value;
+            var lastAttackTick = taser.LastAttackTick;
+            pawn.WeaponServices!.RemoveWeapon(weapon);
+            var newWeapon = pawn.ItemServices!.GiveItem<CWeaponTaser>("weapon_taser");
+            newWeapon.Clip1 = clip1;
+            newWeapon.ReserveAmmo[0] = reservedAmmo;
+            newWeapon.FireTime.Value = fireTime;
+            newWeapon.LastAttackTick = lastAttackTick;
+        }
+        catch (Exception e)
+        {
+            Logger.LogDebug("[OSTORA] Failed to regive taser: {Message}", e.Message);
+        }
+    }
+
+    // ================================================================
+    //  STICKER VALIDATION
+    // ================================================================
+    private void FixSticker(WeaponSkinData skin)
+    {
+        var newStickerHash = CalculateStickerHash(skin);
+        if (_stickerHashes.TryGetValue(skin.SteamID, out var hashes))
+        {
+            while (true)
+            {
+                if (hashes.TryGetValue(CalculateKeyHash(skin), out var stickerHash))
+                {
+                    if (stickerHash != newStickerHash)
+                    {
+                        skin.PaintkitWear += 0.001f;
+                        continue;
+                    }
+                    return;
+                }
+                else
+                {
+                    hashes[CalculateKeyHash(skin)] = newStickerHash;
+                    return;
+                }
+            }
+        }
+        else
+        {
+            _stickerHashes[skin.SteamID] = new Dictionary<int, int>
+            {
+                [CalculateKeyHash(skin)] = newStickerHash
+            };
+        }
+    }
+
+    private static int CalculateKeyHash(WeaponSkinData skin)
+    {
+        var hash = new HashCode();
+        hash.Add(skin.DefinitionIndex);
+        hash.Add(skin.Paintkit);
+        hash.Add(skin.PaintkitWear);
+        hash.Add(skin.PaintkitSeed);
+        return hash.ToHashCode();
+    }
+
+    private static int CalculateStickerHash(WeaponSkinData skin)
+    {
+        var hash = new HashCode();
+        hash.Add(skin.Sticker0?.GetHashCode());
+        hash.Add(skin.Sticker1?.GetHashCode());
+        hash.Add(skin.Sticker2?.GetHashCode());
+        hash.Add(skin.Sticker3?.GetHashCode());
+        hash.Add(skin.Sticker4?.GetHashCode());
+        return hash.ToHashCode();
     }
 
     // ================================================================

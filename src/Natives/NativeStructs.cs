@@ -188,7 +188,7 @@ public class CEconItem : INativeHandle
             cd.SetPaintkitWear(data.PaintkitWear);
             if (data.Quality == EconItemQuality.StatTrak) cd.SetStattrak(data.StattrakCount);
             if (data.Nametag != null) cd.SetCustomName(data.Nametag);
-            for (int i = 0; i < 6; i++) { var s = data.GetSticker(i); if (s != null) cd.SetSticker(i, s); }
+            for (int i = 0; i < 5; i++) { var s = data.GetSticker(i); if (s != null) cd.SetSticker(i, s); }
             if (data.Keychain0 != null) cd.SetKeychain(data.Keychain0);
         });
     }

@@ -19,15 +19,28 @@ public record WeaponSkinData
     public StickerData? Sticker2 { get; set; }
     public StickerData? Sticker3 { get; set; }
     public StickerData? Sticker4 { get; set; }
-    public StickerData? Sticker5 { get; set; }
     public KeychainData? Keychain0 { get; set; }
 
     public StickerData? GetSticker(int slot) => slot switch
     {
         0 => Sticker0, 1 => Sticker1, 2 => Sticker2,
-        3 => Sticker3, 4 => Sticker4, 5 => Sticker5,
+        3 => Sticker3, 4 => Sticker4,
         _ => null
     };
+
+    public void SetSticker(int slot, StickerData? data)
+    {
+        switch (slot)
+        {
+            case 0: Sticker0 = data; break;
+            case 1: Sticker1 = data; break;
+            case 2: Sticker2 = data; break;
+            case 3: Sticker3 = data; break;
+            case 4: Sticker4 = data; break;
+        }
+    }
+
+    public bool HasSticker(int slot) => GetSticker(slot) != null;
 }
 
 // ── Knife skin data ─────────────────────────────────────────────
@@ -73,6 +86,20 @@ public record StickerData
     public float OffsetX { get; set; }
     public float OffsetY { get; set; }
     public int Schema { get; set; } = 1337;
+
+    public StickerData DeepClone()
+    {
+        return new StickerData
+        {
+            Id = Id,
+            Wear = Wear,
+            Scale = Scale,
+            Rotation = Rotation,
+            OffsetX = OffsetX,
+            OffsetY = OffsetY,
+            Schema = Schema,
+        };
+    }
 }
 
 // ── Keychain data ───────────────────────────────────────────────
