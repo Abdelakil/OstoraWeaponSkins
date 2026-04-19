@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Linq;
 
 using Microsoft.Extensions.Logging;
 
@@ -26,22 +27,31 @@ public class OstoraWeaponSkins : BasePlugin
     private Natives Native { get; set; } = null!;
     private Database Db { get; set; } = null!;
 
-    // ── Per-player caches ───────────────────────────────────────
-    private readonly ConcurrentDictionary<ulong, List<WeaponSkinData>> _weaponCache = new();
-    private readonly ConcurrentDictionary<ulong, List<KnifeSkinData>> _knifeCache = new();
-    private readonly ConcurrentDictionary<ulong, List<GloveData>> _gloveCache = new();
-    private readonly ConcurrentDictionary<ulong, List<(Team Team, int AgentIndex)>> _agentCache = new();
-    private readonly ConcurrentDictionary<ulong, List<MusicKitData>> _musicCache = new();
-    private readonly ConcurrentDictionary<ulong, ConcurrentDictionary<Team, string>> _defaultModels = new();
-
-    // ── Inventory map (populated via SOCache hooks) ─────────────
-    private readonly ConcurrentDictionary<ulong, CCSPlayerInventory> _inventories = new();
+    // ── SO-cache readiness set. We no longer trust the hook-side CCSPlayerInventory
+    // instance for mutations (it can get confused if the native pointer is reused
+    // between player slots). Instead, we use this purely as a "is this player's
+    // SOCache currently subscribed?" signal, and we *always* derive the actual
+    // CCSPlayerInventory for mutations directly from that player's live
+    // CCSPlayerController.InventoryServices pointer — guaranteeing the inventory
+    // we write to really belongs to the player we queried the DB for.
+    private readonly ConcurrentDictionary<ulong, byte> _subscribedSteamIds = new();
 
     // ── Agent models (parsed from items_game.txt) ───────────────
     private static readonly Dictionary<int, string> AgentModels = new();
 
-    // Sticker validation tracking (without caching)
-    private readonly Dictionary<ulong, Dictionary<int, int>> _stickerHashes = new();
+    // ── Default models per player (stores default model for agent reset; NOT a skin cache) ──
+    private readonly ConcurrentDictionary<ulong, ConcurrentDictionary<Team, string>> _defaultModels = new();
+
+    // ── Per-player monotonic load epoch.
+    // Every new async load bumps this counter for the player; scheduled callbacks
+    // that finish after a newer load started are ignored. This prevents stale DB
+    // responses from being applied to the wrong player-state, without introducing
+    // any skin cache.
+    private readonly ConcurrentDictionary<ulong, long> _loadEpochs = new();
+
+    // ── Per-player auto-refresh flag (replaces the previous single shared field,
+    // which was not safe with multiple concurrent refreshes).
+    private readonly ConcurrentDictionary<ulong, byte> _autoRefreshFlags = new();
 
     public OstoraWeaponSkins(ISwiftlyCore core) : base(core) { }
 
@@ -65,9 +75,25 @@ public class OstoraWeaponSkins : BasePlugin
             AgentModels[index] = model;
         }
 
-        // SOCache hooks → track inventories
-        Native.OnSOCacheSubscribed += (inv, soid) => _inventories[soid.SteamID] = inv;
-        Native.OnSOCacheUnsubscribed += (inv, soid) => _inventories.TryRemove(soid.SteamID, out _);
+        // SOCache hooks → just mark the player as "their cache is subscribed".
+        // We intentionally do NOT store the CCSPlayerInventory instance passed
+        // to the hook: under concurrent subscribes across multiple players the
+        // captured wrapper has been observed to end up keyed incorrectly and
+        // cause cross-player skin application. We derive a fresh inventory
+        // straight from controller.InventoryServices at apply time instead.
+        Native.OnSOCacheSubscribed += (_inv, soid) =>
+        {
+            _subscribedSteamIds[soid.SteamID] = 1;
+            Logger.LogInformation("[OSTORA] SOCache subscribed for {SteamID}", soid.SteamID);
+        };
+        Native.OnSOCacheUnsubscribed += (_inv, soid) =>
+        {
+            _subscribedSteamIds.TryRemove(soid.SteamID, out _);
+            _loadEpochs.TryRemove(soid.SteamID, out _);
+            _autoRefreshFlags.TryRemove(soid.SteamID, out _);
+            _defaultModels.TryRemove(soid.SteamID, out _);
+            Logger.LogInformation("[OSTORA] SOCache unsubscribed for {SteamID}", soid.SteamID);
+        };
 
         // GiveNamedItem hook → apply weapon/knife attributes on pickup
         Native.OnGiveNamedItemPost += OnGiveNamedItemPost;
@@ -97,6 +123,96 @@ public class OstoraWeaponSkins : BasePlugin
     public override void Unload() { }
 
     // ================================================================
+    //  HELPERS
+    // ================================================================
+
+    /// <summary>Bump the per-player load epoch and return the new value.</summary>
+    private long BumpEpoch(ulong steamId) =>
+        _loadEpochs.AddOrUpdate(steamId, 1L, (_, v) => v + 1);
+
+    /// <summary>True if the given epoch is still the latest for the player.</summary>
+    private bool IsCurrentEpoch(ulong steamId, long epoch) =>
+        _loadEpochs.TryGetValue(steamId, out var v) && v == epoch;
+
+    /// <summary>Re-resolve an online player by SteamID on the game thread.</summary>
+    private IPlayer? GetPlayerBySteamId(ulong steamId)
+    {
+        foreach (var p in Core.PlayerManager.GetAllPlayers())
+        {
+            if (p.SteamID == steamId) return p;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Derive the CCSPlayerInventory for a player DIRECTLY from their own
+    /// controller.InventoryServices pointer + the native offset. This is the
+    /// only guaranteed-correct way to obtain that player's inventory without
+    /// risking a stale/reused wrapper from a dictionary. Also verifies that
+    /// the derived inventory's SOCache.Owner.SteamID actually matches the
+    /// requested player — a hard sanity check against cross-player writes.
+    /// </summary>
+    private bool TryGetPlayerInventory(IPlayer player, out CCSPlayerInventory inventory)
+    {
+        inventory = null!;
+        try
+        {
+            var controller = player.Controller;
+            if (controller is not { IsValid: true }) return false;
+            var services = controller.InventoryServices;
+            if (services is not { IsValid: true }) return false;
+
+            var inv = new CCSPlayerInventory(
+                services.Address + Native.CCSPlayerController_InventoryServices_m_pInventoryOffset);
+            if (!inv.IsValid) return false;
+
+            // Cross-check: the inventory's SOCache owner MUST be the player.
+            // If it doesn't match, something is very wrong — refuse to write.
+            if (inv.SteamID != player.SteamID)
+            {
+                Logger.LogWarning(
+                    "[OSTORA] Inventory SteamID mismatch for player {Expected}: got {Actual}. Refusing to apply.",
+                    player.SteamID, inv.SteamID);
+                return false;
+            }
+
+            inventory = inv;
+            return true;
+        }
+        catch (Exception e)
+        {
+            Logger.LogError(e, "[OSTORA] TryGetPlayerInventory failed for {SteamID}", player.SteamID);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Verify that a weapon is still owned by the expected player/team.
+    /// Used to guard against applying a skin to a weapon that has been
+    /// re-assigned between the async DB fetch and the world-update apply.
+    /// </summary>
+    private static bool VerifyWeaponOwner(CBasePlayerWeapon weapon, ulong expectedSteamId, Team expectedTeam)
+    {
+        try
+        {
+            if (!weapon.IsValid) return false;
+            var ownerHandle = weapon.OwnerEntity;
+            if (!ownerHandle.IsValid) return false;
+            var pawn = ownerHandle.Value?.As<CCSPlayerPawn>();
+            if (pawn == null || !pawn.IsValid) return false;
+            var controllerHandle = pawn.Controller;
+            if (!controllerHandle.IsValid) return false;
+            var controller = controllerHandle.Value?.As<CCSPlayerController>();
+            if (controller == null || !controller.IsValid) return false;
+            return controller.SteamID == expectedSteamId && controller.Team == expectedTeam;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // ================================================================
     //  PLAYER SPAWN
     // ================================================================
     private HookResult OnPlayerSpawn(EventPlayerSpawn ev)
@@ -104,64 +220,10 @@ public class OstoraWeaponSkins : BasePlugin
         var player = ev.UserIdPlayer;
         if (player == null || !player.IsAlive) return HookResult.Continue;
 
-        // If not cached yet, load from DB
-        if (!_weaponCache.ContainsKey(player.SteamID))
-        {
-            LoadAndApplyPlayer(player);
-        }
-        else
-        {
-            // Already cached - use refresh approach (same as ws_refreshskins command)
-            RefreshPlayerVisuals(player);
-        }
+        // Always load from DB on spawn - NO CACHE
+        LoadAndApplyPlayer(player);
 
         return HookResult.Continue;
-    }
-
-    // ================================================================
-    //  REFRESH PLAYER VISUALS (used for spawn when already cached)
-    // ================================================================
-    private void RefreshPlayerVisuals(IPlayer player)
-    {
-        var steamId = player.SteamID;
-
-        if (!_inventories.TryGetValue(steamId, out var inv)) return;
-        if (!_weaponCache.TryGetValue(steamId, out var weapons)) return;
-        if (!_knifeCache.TryGetValue(steamId, out var knives)) return;
-        if (!_gloveCache.TryGetValue(steamId, out var gloves)) return;
-        if (!_musicCache.TryGetValue(steamId, out var music)) return;
-
-        // Update inventory loadout
-        foreach (var w in weapons) inv.UpdateWeaponSkin(w);
-        foreach (var k in knives) inv.UpdateKnifeSkin(k);
-        foreach (var g in gloves) inv.UpdateGloveSkin(g);
-        var musicForTeam = music.FirstOrDefault(m => m.Team == player.Controller.Team);
-        if (musicForTeam != null) inv.UpdateMusicKit(musicForTeam.MusicID);
-
-        // Apply visuals after inventory updates settle (2 ticks)
-        Core.Scheduler.NextWorldUpdate(() =>
-        {
-            Core.Scheduler.NextWorldUpdate(() =>
-            {
-                if (!player.IsAlive) return;
-
-                // Regive all held weapons (forces fresh entities with correct attributes)
-                RegivePlayerWeapons(player);
-
-                // Apply glove visual
-                ApplyGloveVisual(player);
-
-                // Apply agent visual
-                ApplyAgentVisual(player);
-
-                // Auto-refresh after 0.5s to fix glove textures
-                Core.Scheduler.DelayBySeconds(0.5f, () =>
-                {
-                    if (!player.IsAlive) return;
-                    ApplyGloveVisual(player);
-                });
-            });
-        });
     }
 
     // ================================================================
@@ -172,80 +234,118 @@ public class OstoraWeaponSkins : BasePlugin
         var player = ev.UserIdPlayer;
         if (player == null || ev.Disconnect) return HookResult.Continue;
 
-        // Re-apply music kit for new team
-        Core.Scheduler.NextWorldUpdate(() =>
-        {
-            if (!_inventories.TryGetValue(player.SteamID, out var inv)) return;
-            if (!_musicCache.TryGetValue(player.SteamID, out var music)) return;
-
-            var musicForTeam = music.FirstOrDefault(m => m.Team == player.Controller.Team);
-            if (musicForTeam != null)
-                inv.UpdateMusicKit(musicForTeam.MusicID);
-        });
+        // Always reload from DB on team change - NO CACHE
+        LoadAndApplyPlayer(player);
 
         return HookResult.Continue;
     }
 
     // ================================================================
-    //  LOAD FROM DB + APPLY (uses refresh command logic)
+    //  LOAD FROM DB + APPLY (NO CACHE - always from DB)
     // ================================================================
     private void LoadAndApplyPlayer(IPlayer player)
     {
+        // Capture ONLY the SteamID across async boundaries. The IPlayer reference
+        // is re-resolved on the game thread inside scheduled callbacks to avoid
+        // acting on a stale or reused handle that could point to another player.
         var steamId = player.SteamID;
+        var epoch = BumpEpoch(steamId);
+
         Task.Run(async () =>
         {
             try
             {
+                // ALWAYS fetch directly from database - NO CACHING.
+                // Each call is keyed strictly by steamId → no cross-player leakage.
                 var weapons = await Db.GetWeaponSkinsAsync(steamId);
-                var knives = await Db.GetKnifeSkinsAsync(steamId);
-                var gloves = await Db.GetGloveSkinsAsync(steamId);
-                var agents = await Db.GetAgentsAsync(steamId);
-                var music = await Db.GetMusicKitAsync(steamId);
+                var knives  = await Db.GetKnifeSkinsAsync(steamId);
+                var gloves  = await Db.GetGloveSkinsAsync(steamId);
+                var agents  = await Db.GetAgentsAsync(steamId);
+                var music   = await Db.GetMusicKitAsync(steamId);
 
-                _weaponCache[steamId] = weapons;
-                _knifeCache[steamId] = knives;
-                _gloveCache[steamId] = gloves;
-                _agentCache[steamId] = agents;
-                _musicCache[steamId] = music;
+                // Defensive: drop any row whose SteamID does not match (should never
+                // happen with correct queries, but guards against future bugs).
+                weapons = weapons.Where(w => w.SteamID == steamId).ToList();
+                knives  = knives .Where(k => k.SteamID == steamId).ToList();
+                gloves  = gloves .Where(g => g.SteamID == steamId).ToList();
+                music   = music  .Where(m => m.SteamID == steamId).ToList();
 
                 Core.Scheduler.NextWorldUpdate(() =>
                 {
-                    if (!_inventories.TryGetValue(steamId, out var inv))
+                    if (!IsCurrentEpoch(steamId, epoch)) return;
+
+                    var p = GetPlayerBySteamId(steamId);
+                    if (p == null) return;
+                    if (p.Controller is not { IsValid: true }) return;
+
+                    if (!_subscribedSteamIds.ContainsKey(steamId))
                     {
-                        Logger.LogWarning("[OSTORA] No inventory for {SteamID} on spawn", steamId);
+                        Logger.LogWarning("[OSTORA] SOCache not yet subscribed for {SteamID} on spawn — skipping load", steamId);
                         return;
                     }
 
-                    // Update inventory loadout for all items
-                    foreach (var w in weapons) inv.UpdateWeaponSkin(w);
-                    foreach (var k in knives) inv.UpdateKnifeSkin(k);
-                    foreach (var g in gloves) inv.UpdateGloveSkin(g);
-                    var musicForTeam = music.FirstOrDefault(m => m.Team == player.Controller.Team);
-                    if (musicForTeam != null) inv.UpdateMusicKit(musicForTeam.MusicID);
+                    if (!TryGetPlayerInventory(p, out var inv))
+                    {
+                        Logger.LogWarning("[OSTORA] Could not derive inventory for {SteamID} on spawn", steamId);
+                        return;
+                    }
 
-                    // Apply visuals after inventory updates settle (2 ticks - same as refresh command)
+                    var team = p.Controller.Team;
+
+                    // Narrow to current team, strictly per-player.
+                    var teamWeapons = weapons.Where(w => w.Team == team).ToList();
+                    var teamKnives  = knives .Where(k => k.Team == team).ToList();
+                    var teamGloves  = gloves .Where(g => g.Team == team).ToList();
+                    var teamMusic   = music  .FirstOrDefault(m => m.Team == team);
+
+                    Logger.LogInformation(
+                        "[OSTORA] Applying for {SteamID} team={Team}: {Weapons} weapons, {Knives} knives, {Gloves} gloves, music={Music}",
+                        steamId, team, teamWeapons.Count, teamKnives.Count, teamGloves.Count, teamMusic?.MusicID ?? -1);
+
+                    // Update inventory loadout for current team only
+                    foreach (var w in teamWeapons) inv.UpdateWeaponSkin(w);
+                    foreach (var k in teamKnives)  inv.UpdateKnifeSkin(k);
+                    foreach (var g in teamGloves)  inv.UpdateGloveSkin(g);
+                    if (teamMusic != null) inv.UpdateMusicKit(teamMusic.MusicID);
+
+                    // Apply visuals after inventory updates settle (2 ticks)
                     Core.Scheduler.NextWorldUpdate(() =>
                     {
                         Core.Scheduler.NextWorldUpdate(() =>
                         {
-                            if (!player.IsAlive) return;
+                            if (!IsCurrentEpoch(steamId, epoch)) return;
+                            var p2 = GetPlayerBySteamId(steamId);
+                            if (p2 == null || !p2.IsAlive) return;
 
-                            // Regive all held weapons (forces fresh entities with correct attributes)
-                            RegivePlayerWeapons(player);
+                            var team2 = p2.Controller.Team;
 
-                            // Apply glove visual
-                            ApplyGloveVisual(player);
+                            // Re-filter in case team changed since the outer callback.
+                            var applyWeapons = weapons.Where(w => w.Team == team2).ToList();
+                            var applyKnives  = knives .Where(k => k.Team == team2).ToList();
+                            var applyGlove   = gloves .FirstOrDefault(g => g.Team == team2);
+                            var applyAgent   = agents .FirstOrDefault(a => a.Team == team2);
 
-                            // Apply agent visual
-                            ApplyAgentVisual(player);
+                            ApplyWeaponAttributesFromData(p2, applyWeapons, applyKnives, team2);
 
-                            Logger.LogInformation("[OSTORA] Spawn load complete for {SteamID}", steamId);
+                            if (applyGlove != null && TryGetPlayerInventory(p2, out var inv2))
+                                ApplyGloveVisualFromData(p2, applyGlove, inv2, team2);
+
+                            if (applyAgent.AgentIndex != 0)
+                                ApplyAgentVisualFromData(p2, applyAgent.AgentIndex);
+
+                            Logger.LogInformation("[OSTORA] Spawn load complete for {SteamID} (Team: {Team})", steamId, team2);
 
                             // Auto-refresh after 0.5s to fix glove textures
                             Core.Scheduler.DelayBySeconds(0.5f, () =>
                             {
-                                if (!player.IsAlive) return;
-                                ApplyGloveVisual(player);
+                                if (!IsCurrentEpoch(steamId, epoch)) return;
+                                var p3 = GetPlayerBySteamId(steamId);
+                                if (p3 == null || !p3.IsAlive) return;
+                                if (!TryGetPlayerInventory(p3, out var inv3)) return;
+                                var team3 = p3.Controller.Team;
+                                var freshGlove = gloves.FirstOrDefault(g => g.Team == team3);
+                                if (freshGlove != null)
+                                    ApplyGloveVisualFromData(p3, freshGlove, inv3, team3);
                             });
                         });
                     });
@@ -259,10 +359,8 @@ public class OstoraWeaponSkins : BasePlugin
     }
 
     // ================================================================
-    //  RCON REFRESH
+    //  RCON REFRESH (NO CACHE - always from DB)
     // ================================================================
-    private bool _isAutoRefresh = false;
-
     private void OnRefreshCommand(SwiftlyS2.Shared.Commands.ICommandContext context)
     {
         if (context.Args.Length < 1) return;
@@ -272,82 +370,95 @@ public class OstoraWeaponSkins : BasePlugin
             return;
         }
 
-        var isAuto = _isAutoRefresh;
-        _isAutoRefresh = false;
+        // Atomic per-player auto-refresh check.
+        var isAuto = _autoRefreshFlags.TryRemove(steamId, out _);
 
         Logger.LogInformation("[OSTORA] Refresh requested for {SteamID} (Auto: {IsAuto})", steamId, isAuto);
+
+        var epoch = BumpEpoch(steamId);
 
         Task.Run(async () =>
         {
             try
             {
                 var weapons = await Db.GetWeaponSkinsAsync(steamId);
-                var knives = await Db.GetKnifeSkinsAsync(steamId);
-                var gloves = await Db.GetGloveSkinsAsync(steamId);
-                var agents = await Db.GetAgentsAsync(steamId);
-                var music = await Db.GetMusicKitAsync(steamId);
+                var knives  = await Db.GetKnifeSkinsAsync(steamId);
+                var gloves  = await Db.GetGloveSkinsAsync(steamId);
+                var agents  = await Db.GetAgentsAsync(steamId);
+                var music   = await Db.GetMusicKitAsync(steamId);
 
-                _weaponCache[steamId] = weapons;
-                _knifeCache[steamId] = knives;
-                _gloveCache[steamId] = gloves;
-                _agentCache[steamId] = agents;
-                _musicCache[steamId] = music;
+                weapons = weapons.Where(w => w.SteamID == steamId).ToList();
+                knives  = knives .Where(k => k.SteamID == steamId).ToList();
+                gloves  = gloves .Where(g => g.SteamID == steamId).ToList();
+                music   = music  .Where(m => m.SteamID == steamId).ToList();
 
                 Core.Scheduler.NextWorldUpdate(() =>
                 {
-                    if (!_inventories.TryGetValue(steamId, out var inv))
-                    {
-                        Logger.LogWarning("[OSTORA] No inventory for {SteamID}", steamId);
-                        return;
-                    }
+                    if (!IsCurrentEpoch(steamId, epoch)) return;
 
-                    // Find the player
-                    IPlayer? player = null;
-                    foreach (var p in Core.PlayerManager.GetAllPlayers())
-                    {
-                        if (p.SteamID == steamId) { player = p; break; }
-                    }
+                    var player = GetPlayerBySteamId(steamId);
                     if (player == null)
                     {
                         Logger.LogWarning("[OSTORA] Player {SteamID} not found online", steamId);
                         return;
                     }
 
-                    // Update inventory loadout
-                    foreach (var w in weapons) inv.UpdateWeaponSkin(w);
-                    foreach (var k in knives) inv.UpdateKnifeSkin(k);
+                    if (!_subscribedSteamIds.ContainsKey(steamId))
+                    {
+                        Logger.LogWarning("[OSTORA] SOCache not yet subscribed for {SteamID}", steamId);
+                        return;
+                    }
 
-                    // Gloves: update inventory for all teams
-                    foreach (var g in gloves) inv.UpdateGloveSkin(g);
+                    if (!TryGetPlayerInventory(player, out var inv))
+                    {
+                        Logger.LogWarning("[OSTORA] Could not derive inventory for {SteamID}", steamId);
+                        return;
+                    }
 
-                    // Music kit: filter by team
-                    var musicForTeam = music.FirstOrDefault(m => m.Team == player.Controller.Team);
-                    if (musicForTeam != null) inv.UpdateMusicKit(musicForTeam.MusicID);
+                    var team = player.Controller.Team;
 
-                    // Apply visuals after inventory updates settle (2 ticks)
+                    var teamWeapons = weapons.Where(w => w.Team == team).ToList();
+                    var teamKnives  = knives .Where(k => k.Team == team).ToList();
+                    var teamGloves  = gloves .Where(g => g.Team == team).ToList();
+                    var teamMusic   = music  .FirstOrDefault(m => m.Team == team);
+
+                    foreach (var w in teamWeapons) inv.UpdateWeaponSkin(w);
+                    foreach (var k in teamKnives)  inv.UpdateKnifeSkin(k);
+                    foreach (var g in teamGloves)  inv.UpdateGloveSkin(g);
+                    if (teamMusic != null) inv.UpdateMusicKit(teamMusic.MusicID);
+
                     Core.Scheduler.NextWorldUpdate(() =>
                     {
                         Core.Scheduler.NextWorldUpdate(() =>
                         {
-                            if (!player.IsAlive) return;
+                            if (!IsCurrentEpoch(steamId, epoch)) return;
+                            var p2 = GetPlayerBySteamId(steamId);
+                            if (p2 == null || !p2.IsAlive) return;
 
-                            // Regive all held weapons
-                            RegivePlayerWeapons(player);
+                            var team2 = p2.Controller.Team;
 
-                            // Apply glove visual
-                            ApplyGloveVisual(player);
+                            var applyWeapons = weapons.Where(w => w.Team == team2).ToList();
+                            var applyKnives  = knives .Where(k => k.Team == team2).ToList();
+                            var applyGlove   = gloves .FirstOrDefault(g => g.Team == team2);
+                            var applyAgent   = agents .FirstOrDefault(a => a.Team == team2);
 
-                            // Apply agent visual
-                            ApplyAgentVisual(player);
+                            ApplyWeaponAttributesFromData(p2, applyWeapons, applyKnives, team2);
+
+                            if (applyGlove != null && TryGetPlayerInventory(p2, out var inv2))
+                                ApplyGloveVisualFromData(p2, applyGlove, inv2, team2);
+
+                            if (applyAgent.AgentIndex != 0)
+                                ApplyAgentVisualFromData(p2, applyAgent.AgentIndex);
 
                             Logger.LogInformation("[OSTORA] Refresh complete for {SteamID}", steamId);
 
-                            // Auto-send the command again after 0.5s to fix glove textures (only if not already an auto-refresh)
+                            // Auto-refresh after 0.5s to fix glove textures (only if this
+                            // invocation was not itself an auto-refresh).
                             if (!isAuto)
                             {
                                 Core.Scheduler.DelayBySeconds(0.5f, () =>
                                 {
-                                    _isAutoRefresh = true;
+                                    _autoRefreshFlags[steamId] = 1;
                                     Core.Engine.ExecuteCommand($"ws_refreshskins {steamId}");
                                 });
                             }
@@ -363,10 +474,18 @@ public class OstoraWeaponSkins : BasePlugin
     }
 
     // ================================================================
-    //  GIVE NAMED ITEM POST → apply skin attributes on weapon pickup
+    //  GIVE NAMED ITEM POST → apply skin attributes on weapon pickup (NO CACHE - query DB)
     // ================================================================
     private void OnGiveNamedItemPost(CCSPlayer_ItemServices services, CBasePlayerWeapon weapon)
     {
+        ulong steamId;
+        Team team;
+        ushort defIndex;
+
+        // Resolve the owning player ONCE on the game thread, then capture only
+        // value types across the async boundary. The weapon reference itself is
+        // re-verified before we apply anything to avoid cross-player contamination
+        // if the weapon changes owner while the DB query is in flight.
         try
         {
             var ownerHandle = weapon.OwnerEntity;
@@ -378,78 +497,63 @@ public class OstoraWeaponSkins : BasePlugin
             var controller = controllerHandle.Value?.As<CCSPlayerController>();
             if (controller == null || !controller.IsValid) return;
 
-            var steamId = controller.SteamID;
-            var team = controller.Team;
-            var defIndex = weapon.AttributeManager.Item.ItemDefinitionIndex;
-
-            if (SkinUtils.IsKnife((int)defIndex))
-            {
-                if (_knifeCache.TryGetValue(steamId, out var knives))
-                {
-                    var knife = knives.FirstOrDefault(k => k.Team == team);
-                    if (knife != null)
-                        ApplyKnifeAttributes(weapon, knife);
-                }
-            }
-            else if (SkinUtils.IsWeapon((int)defIndex))
-            {
-                if (_weaponCache.TryGetValue(steamId, out var skins))
-                {
-                    var skin = skins.FirstOrDefault(s => s.Team == team && s.DefinitionIndex == defIndex);
-                    if (skin != null)
-                        ApplyWeaponAttributes(weapon, skin);
-                }
-            }
+            steamId  = controller.SteamID;
+            team     = controller.Team;
+            defIndex = weapon.AttributeManager.Item.ItemDefinitionIndex;
         }
-        catch (Exception e) { Logger.LogError(e, "[OSTORA] GiveNamedItemPost error"); }
-    }
-
-    // ================================================================
-    //  APPLY ALL VISUALS
-    // ================================================================
-    private void ApplyAllVisuals(IPlayer player)
-    {
-        if (!player.IsAlive) return;
-
-        // Weapons: apply attributes to all currently held weapons
-        foreach (var handle in player.PlayerPawn!.WeaponServices!.MyWeapons)
+        catch (Exception e)
         {
-            var weapon = handle.Value;
-            if (weapon == null || !weapon.IsValid) continue;
-            var def = weapon.AttributeManager.Item.ItemDefinitionIndex;
-
-            if (SkinUtils.IsKnife((int)def))
-            {
-                if (_knifeCache.TryGetValue(player.SteamID, out var knives))
-                {
-                    var knife = knives.FirstOrDefault(k => k.Team == player.Controller.Team);
-                    if (knife != null) ApplyKnifeAttributes(weapon, knife);
-                }
-            }
-            else if (SkinUtils.IsWeapon((int)def))
-            {
-                if (_weaponCache.TryGetValue(player.SteamID, out var skins))
-                {
-                    var skin = skins.FirstOrDefault(s => s.Team == player.Controller.Team && s.DefinitionIndex == def);
-                    if (skin != null) ApplyWeaponAttributes(weapon, skin);
-                }
-            }
+            Logger.LogError(e, "[OSTORA] GiveNamedItemPost resolve error");
+            return;
         }
 
-        // Gloves
-        ApplyGloveVisual(player);
+        var weaponRef = weapon;
 
-        // Agents
-        ApplyAgentVisual(player);
+        Task.Run(async () =>
+        {
+            try
+            {
+                if (SkinUtils.IsKnife((int)defIndex))
+                {
+                    var knives = await Db.GetKnifeSkinsAsync(steamId);
+                    var knife = knives.FirstOrDefault(k => k.SteamID == steamId && k.Team == team);
+                    if (knife == null) return;
+
+                    Core.Scheduler.NextWorldUpdate(() =>
+                    {
+                        // Guard: weapon must still belong to the player we queried for.
+                        if (!VerifyWeaponOwner(weaponRef, steamId, team)) return;
+                        ApplyKnifeAttributes(weaponRef, knife);
+                    });
+                }
+                else if (SkinUtils.IsWeapon((int)defIndex))
+                {
+                    var skins = await Db.GetWeaponSkinsAsync(steamId);
+                    var skin = skins.FirstOrDefault(s =>
+                        s.SteamID == steamId && s.Team == team && s.DefinitionIndex == defIndex);
+                    if (skin == null) return;
+
+                    Core.Scheduler.NextWorldUpdate(() =>
+                    {
+                        if (!VerifyWeaponOwner(weaponRef, steamId, team)) return;
+                        // Also verify the weapon's definition index hasn't changed.
+                        if (weaponRef.AttributeManager.Item.ItemDefinitionIndex != defIndex) return;
+                        ApplyWeaponAttributes(weaponRef, skin);
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "[OSTORA] GiveNamedItemPost DB error for {SteamID}", steamId);
+            }
+        });
     }
 
     // ================================================================
-    //  WEAPON ATTRIBUTE APPLICATION
+    //  WEAPON ATTRIBUTE APPLICATION (NO STICKER CACHE)
     // ================================================================
     private void ApplyWeaponAttributes(CBasePlayerWeapon weapon, WeaponSkinData skin)
     {
-        FixSticker(skin);
-        
         var item = weapon.AttributeManager.Item;
         item.ItemDefinitionIndex = skin.DefinitionIndex;
         item.EntityQuality = (int)skin.Quality;
@@ -475,11 +579,11 @@ public class OstoraWeaponSkins : BasePlugin
         {
             var sticker = skin.GetSticker(i);
             if (sticker == null) continue;
-            
+
             var stickerIdFloat = BitConverter.Int32BitsToSingle(sticker.Id);
             item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} id", stickerIdFloat);
             item.AttributeList.SetOrAddAttribute($"sticker slot {i} id", stickerIdFloat);
-            
+
             if (sticker.Schema != 1337)
             {
                 var schemaFloat = BitConverter.Int32BitsToSingle(sticker.Schema);
@@ -487,11 +591,11 @@ public class OstoraWeaponSkins : BasePlugin
                 item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} offset x", sticker.OffsetX);
                 item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} offset y", sticker.OffsetY);
             }
-            
+
             item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} wear", sticker.Wear);
             item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} scale", sticker.Scale);
             item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} rotation", sticker.Rotation);
-            
+
             item.AttributeList.SetOrAddAttribute($"sticker slot {i} wear", sticker.Wear);
             item.AttributeList.SetOrAddAttribute($"sticker slot {i} scale", sticker.Scale);
             item.AttributeList.SetOrAddAttribute($"sticker slot {i} rotation", sticker.Rotation);
@@ -545,18 +649,11 @@ public class OstoraWeaponSkins : BasePlugin
     }
 
     // ================================================================
-    //  GLOVE VISUAL APPLICATION
+    //  GLOVE VISUAL APPLICATION (DATA-DRIVEN - NO CACHE)
     // ================================================================
-    private void ApplyGloveVisual(IPlayer player)
+    private void ApplyGloveVisualFromData(IPlayer player, GloveData glove, CCSPlayerInventory inv, Team team)
     {
         if (!player.IsAlive) return;
-        if (!_gloveCache.TryGetValue(player.SteamID, out var gloves)) return;
-
-        var glove = gloves.FirstOrDefault(g => g.Team == player.Controller.Team);
-        if (glove == null) return;
-
-        // Need inventory to read loadout item
-        if (!_inventories.TryGetValue(player.SteamID, out var inv)) return;
 
         var pawn = player.PlayerPawn!;
         Core.Scheduler.NextWorldUpdate(() =>
@@ -576,12 +673,12 @@ public class OstoraWeaponSkins : BasePlugin
             Core.Scheduler.NextWorldUpdate(() =>
             {
                 if (!player.IsAlive) return;
-                ApplyGloveAttributes(pawn, econGloves, glove, inv, player.Controller.Team);
+                ApplyGloveAttributesFromData(pawn, econGloves, glove, inv, team);
             });
         });
     }
 
-    private void ApplyGloveAttributes(CCSPlayerPawn pawn, CEconItemView econGloves, GloveData glove, CCSPlayerInventory inv, Team team)
+    private void ApplyGloveAttributesFromData(CCSPlayerPawn pawn, CEconItemView econGloves, GloveData glove, CCSPlayerInventory inv, Team team)
     {
         // Read glove item from inventory loadout (ensures ItemID matches inventory)
         var itemInLoadout = inv.GetItemInLoadout(team, loadout_slot_t.LOADOUT_SLOT_CLOTHING_HANDS);
@@ -618,15 +715,16 @@ public class OstoraWeaponSkins : BasePlugin
     }
 
     // ================================================================
-    //  AGENT VISUAL APPLICATION
+    //  AGENT VISUAL APPLICATION (DATA-DRIVEN - NO CACHE)
     // ================================================================
-    private void ApplyAgentVisual(IPlayer player)
+    private void ApplyAgentVisualFromData(IPlayer player, int agentIndex)
     {
         if (!player.IsAlive) return;
-        if (!_agentCache.TryGetValue(player.SteamID, out var agents)) return;
+        if (agentIndex == 0) return;
 
         var pawn = player.PlayerPawn!;
         var team = player.Controller.Team;
+        var steamId = player.SteamID;
 
         Core.Scheduler.NextWorldUpdate(() =>
         {
@@ -634,206 +732,73 @@ public class OstoraWeaponSkins : BasePlugin
 
             var current = pawn.CBodyComponent!.SceneNode!.GetSkeletonInstance().ModelState.ModelName;
 
-            // Capture default model
-            var defaults = _defaultModels.GetOrAdd(player.SteamID, _ => new ConcurrentDictionary<Team, string>());
+            // Capture default model per-player, per-team (so reset works later).
+            var defaults = _defaultModels.GetOrAdd(steamId, _ => new ConcurrentDictionary<Team, string>());
             defaults.TryAdd(team, current);
 
-            var agentEntry = agents.FirstOrDefault(a => a.Team == team);
+            // Look up agent model by index using items_game definition
+            var agentModelPath = GetAgentModelPath(agentIndex);
 
-            if (agentEntry.AgentIndex != 0)
+            if (agentModelPath != null)
             {
-                // Look up agent model by index using items_game definition
-                var agentModelPath = GetAgentModelPath(agentEntry.AgentIndex);
-
-                if (agentModelPath != null)
+                // Swap trick for agent model refresh
+                if (current != agentModelPath)
                 {
-                    // Swap trick for agent model refresh
-                    if (current != agentModelPath)
-                    {
-                        pawn.SetModel("characters/models/tm_jumpsuit/tm_jumpsuit_varianta.vmdl");
-                        pawn.SetModel(current);
-                    }
+                    pawn.SetModel("characters/models/tm_jumpsuit/tm_jumpsuit_varianta.vmdl");
+                    pawn.SetModel(current);
+                }
 
-                    Core.Scheduler.NextWorldUpdate(() =>
-                    {
-                        if (!player.IsAlive) return;
-                        pawn.SetModel(agentModelPath);
-                    });
-                }
-                else
-                {
-                    Logger.LogWarning("[OSTORA] Agent index {Index} not found in model lookup", agentEntry.AgentIndex);
-                }
-            }
-            else if (defaults.TryGetValue(team, out var defaultModel))
-            {
                 Core.Scheduler.NextWorldUpdate(() =>
                 {
                     if (!player.IsAlive) return;
-                    pawn.SetModel(defaultModel);
+                    pawn.SetModel(agentModelPath);
                 });
+            }
+            else
+            {
+                Logger.LogWarning("[OSTORA] Agent index {Index} not found in model lookup", agentIndex);
             }
         });
     }
 
     // ================================================================
-    //  REGIVE WEAPONS (for refresh)
+    //  APPLY WEAPON ATTRIBUTES FROM DB DATA (NO CACHE)
     // ================================================================
-    private void RegivePlayerWeapons(IPlayer player)
+    private void ApplyWeaponAttributesFromData(IPlayer player, List<WeaponSkinData> weapons, List<KnifeSkinData> knives, Team team)
     {
         if (!player.IsAlive) return;
         var pawn = player.PlayerPawn!;
-        var team = player.Controller.Team;
+        var playerSteamId = player.SteamID;
 
         foreach (var handle in pawn.WeaponServices!.MyWeapons)
         {
             var weapon = handle.Value;
             if (weapon == null || !weapon.IsValid) continue;
+
+            // Belt-and-suspenders: the weapon must actually belong to this player
+            // on this team before we touch it.
+            if (!VerifyWeaponOwner(weapon, playerSteamId, team)) continue;
+
             var def = (int)weapon.AttributeManager.Item.ItemDefinitionIndex;
 
             if (SkinUtils.IsKnife(def))
             {
-                if (_knifeCache.TryGetValue(player.SteamID, out var knives))
+                var knife = knives.FirstOrDefault(k => k.SteamID == playerSteamId && k.Team == team);
+                if (knife != null)
                 {
-                    var knife = knives.FirstOrDefault(k => k.Team == team);
-                    if (knife != null)
-                    {
-                        Core.Scheduler.NextWorldUpdate(() =>
-                        {
-                            try
-                            {
-                                if (!player.IsAlive) return;
-                                pawn.WeaponServices!.RemoveWeaponBySlot(gear_slot_t.GEAR_SLOT_KNIFE);
-                                pawn.ItemServices!.GiveItem("weapon_knife");
-                                pawn.WeaponServices!.SelectWeaponBySlot(gear_slot_t.GEAR_SLOT_KNIFE);
-                            }
-                            catch (Exception e)
-                            {
-                                Logger.LogDebug("[OSTORA] Failed to regive knife: {Message}", e.Message);
-                            }
-                        });
-                    }
+                    ApplyKnifeAttributes(weapon, knife);
                 }
             }
             else if (SkinUtils.IsWeapon(def))
             {
-                if (_weaponCache.TryGetValue(player.SteamID, out var skins))
+                var skin = weapons.FirstOrDefault(s =>
+                    s.SteamID == playerSteamId && s.Team == team && s.DefinitionIndex == def);
+                if (skin != null)
                 {
-                    var skin = skins.FirstOrDefault(s => s.Team == team && s.DefinitionIndex == (ushort)def);
-                    if (skin != null)
-                    {
-                        var defIdx = skin.DefinitionIndex;
-                        var weaponRef = weapon;
-                        var clip1 = weapon.Clip1;
-                        var reservedAmmo = weapon.ReserveAmmo[0];
-                        Core.Scheduler.NextWorldUpdate(() =>
-                        {
-                            try
-                            {
-                                if (!player.IsAlive) return;
-                                if (!weaponRef.IsValid) return;
-
-                                if (defIdx == Core.Helpers.GetDefinitionIndexByClassname("weapon_taser"))
-                                {
-                                    RegiveWeaponTaser(player, weaponRef, clip1, reservedAmmo);
-                                }
-                                else
-                                {
-                                    var name = Core.Helpers.GetClassnameByDefinitionIndex(defIdx)!;
-                                    pawn.WeaponServices!.RemoveWeapon(weaponRef);
-                                    var newWeapon = pawn.ItemServices!.GiveItem<CBasePlayerWeapon>(name);
-                                    newWeapon.Clip1 = clip1;
-                                    newWeapon.ReserveAmmo[0] = reservedAmmo;
-                                }
-                            }
-                            catch (Exception e)
-                            {
-                                Logger.LogDebug("[OSTORA] Failed to regive weapon: {Message}", e.Message);
-                            }
-                        });
-                    }
+                    ApplyWeaponAttributes(weapon, skin);
                 }
             }
         }
-    }
-
-    private void RegiveWeaponTaser(IPlayer player, CBasePlayerWeapon weapon, int clip1, int reservedAmmo)
-    {
-        try
-        {
-            var pawn = player.PlayerPawn!;
-            if (!weapon.IsValid) return;
-
-            var taser = weapon.As<CWeaponTaser>();
-            var fireTime = taser.FireTime.Value;
-            var lastAttackTick = taser.LastAttackTick;
-            pawn.WeaponServices!.RemoveWeapon(weapon);
-            var newWeapon = pawn.ItemServices!.GiveItem<CWeaponTaser>("weapon_taser");
-            newWeapon.Clip1 = clip1;
-            newWeapon.ReserveAmmo[0] = reservedAmmo;
-            newWeapon.FireTime.Value = fireTime;
-            newWeapon.LastAttackTick = lastAttackTick;
-        }
-        catch (Exception e)
-        {
-            Logger.LogDebug("[OSTORA] Failed to regive taser: {Message}", e.Message);
-        }
-    }
-
-    // ================================================================
-    //  STICKER VALIDATION
-    // ================================================================
-    private void FixSticker(WeaponSkinData skin)
-    {
-        var newStickerHash = CalculateStickerHash(skin);
-        if (_stickerHashes.TryGetValue(skin.SteamID, out var hashes))
-        {
-            while (true)
-            {
-                if (hashes.TryGetValue(CalculateKeyHash(skin), out var stickerHash))
-                {
-                    if (stickerHash != newStickerHash)
-                    {
-                        skin.PaintkitWear += 0.001f;
-                        continue;
-                    }
-                    return;
-                }
-                else
-                {
-                    hashes[CalculateKeyHash(skin)] = newStickerHash;
-                    return;
-                }
-            }
-        }
-        else
-        {
-            _stickerHashes[skin.SteamID] = new Dictionary<int, int>
-            {
-                [CalculateKeyHash(skin)] = newStickerHash
-            };
-        }
-    }
-
-    private static int CalculateKeyHash(WeaponSkinData skin)
-    {
-        var hash = new HashCode();
-        hash.Add(skin.DefinitionIndex);
-        hash.Add(skin.Paintkit);
-        hash.Add(skin.PaintkitWear);
-        hash.Add(skin.PaintkitSeed);
-        return hash.ToHashCode();
-    }
-
-    private static int CalculateStickerHash(WeaponSkinData skin)
-    {
-        var hash = new HashCode();
-        hash.Add(skin.Sticker0?.GetHashCode());
-        hash.Add(skin.Sticker1?.GetHashCode());
-        hash.Add(skin.Sticker2?.GetHashCode());
-        hash.Add(skin.Sticker3?.GetHashCode());
-        hash.Add(skin.Sticker4?.GetHashCode());
-        return hash.ToHashCode();
     }
 
     // ================================================================
