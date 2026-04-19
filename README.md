@@ -18,8 +18,9 @@ A CS2 (Counter-Strike 2) plugin built with SwiftlyS2 that allows server administ
 
 1. Build the project: `dotnet build --configuration Release`
 2. Copy the `build/` directory contents to your CS2 server's SwiftlyS2 plugins directory
-3. Configure your database connection in the plugin settings
-4. Restart your CS2 server
+3. Add "OstoraWeaponSkins" to your SwiftlyS2 `database.jsonc` plugins list
+4. Configure your database connection in the plugin settings
+5. Restart your CS2 server
 
 ## RCON Commands
 
