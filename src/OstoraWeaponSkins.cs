@@ -442,7 +442,10 @@ public class OstoraWeaponSkins : BasePlugin
                             var applyGlove   = gloves .FirstOrDefault(g => g.Team == team2);
                             var applyAgent   = agents .FirstOrDefault(a => a.Team == team2);
 
-                            ApplyWeaponAttributesFromData(p2, applyWeapons, applyKnives, team2);
+                            // For mid-game refresh, re-give weapons so the client picks up the new
+                            // skin on already-equipped entities (in-place attribute writes do not
+                            // reliably re-network the visual change for an existing weapon).
+                            RegivePlayerWeaponsFromData(p2, applyWeapons, applyKnives, team2);
 
                             if (applyGlove != null && TryGetPlayerInventory(p2, out var inv2))
                                 ApplyGloveVisualFromData(p2, applyGlove, inv2, team2);
@@ -759,6 +762,115 @@ public class OstoraWeaponSkins : BasePlugin
                 Logger.LogWarning("[OSTORA] Agent index {Index} not found in model lookup", agentIndex);
             }
         });
+    }
+
+    // ================================================================
+    //  REGIVE WEAPONS FROM DB DATA (NO CACHE) - used by refresh command
+    //  Forces the server to re-create weapon entities so the client
+    //  picks up the updated skin. Used only for mid-game refresh, since
+    //  in-place attribute writes on already-equipped weapons do not
+    //  reliably re-network the visual change.
+    // ================================================================
+    private void RegivePlayerWeaponsFromData(IPlayer player, List<WeaponSkinData> weapons, List<KnifeSkinData> knives, Team team)
+    {
+        if (!player.IsAlive) return;
+        var pawn = player.PlayerPawn!;
+        var playerSteamId = player.SteamID;
+
+        foreach (var handle in pawn.WeaponServices!.MyWeapons)
+        {
+            var weapon = handle.Value;
+            if (weapon == null || !weapon.IsValid) continue;
+
+            // Guard: the weapon must still belong to this player/team.
+            if (!VerifyWeaponOwner(weapon, playerSteamId, team)) continue;
+
+            var def = (int)weapon.AttributeManager.Item.ItemDefinitionIndex;
+
+            if (SkinUtils.IsKnife(def))
+            {
+                var knife = knives.FirstOrDefault(k => k.SteamID == playerSteamId && k.Team == team);
+                if (knife == null) continue;
+
+                Core.Scheduler.NextWorldUpdate(() =>
+                {
+                    try
+                    {
+                        if (!player.IsAlive) return;
+                        if (player.SteamID != playerSteamId) return;
+                        pawn.WeaponServices!.RemoveWeaponBySlot(gear_slot_t.GEAR_SLOT_KNIFE);
+                        pawn.ItemServices!.GiveItem("weapon_knife");
+                        pawn.WeaponServices!.SelectWeaponBySlot(gear_slot_t.GEAR_SLOT_KNIFE);
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.LogDebug("[OSTORA] Failed to regive knife: {Message}", e.Message);
+                    }
+                });
+            }
+            else if (SkinUtils.IsWeapon(def))
+            {
+                var skin = weapons.FirstOrDefault(s =>
+                    s.SteamID == playerSteamId && s.Team == team && s.DefinitionIndex == def);
+                if (skin == null) continue;
+
+                var defIdx = skin.DefinitionIndex;
+                var weaponRef = weapon;
+                var clip1 = weapon.Clip1;
+                var reservedAmmo = weapon.ReserveAmmo[0];
+
+                Core.Scheduler.NextWorldUpdate(() =>
+                {
+                    try
+                    {
+                        if (!player.IsAlive) return;
+                        if (player.SteamID != playerSteamId) return;
+                        if (!weaponRef.IsValid) return;
+                        if (!VerifyWeaponOwner(weaponRef, playerSteamId, team)) return;
+
+                        if (defIdx == Core.Helpers.GetDefinitionIndexByClassname("weapon_taser"))
+                        {
+                            RegiveWeaponTaser(player, weaponRef, clip1, reservedAmmo);
+                        }
+                        else
+                        {
+                            var name = Core.Helpers.GetClassnameByDefinitionIndex(defIdx)!;
+                            pawn.WeaponServices!.RemoveWeapon(weaponRef);
+                            var newWeapon = pawn.ItemServices!.GiveItem<CBasePlayerWeapon>(name);
+                            newWeapon.Clip1 = clip1;
+                            newWeapon.ReserveAmmo[0] = reservedAmmo;
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.LogDebug("[OSTORA] Failed to regive weapon: {Message}", e.Message);
+                    }
+                });
+            }
+        }
+    }
+
+    private void RegiveWeaponTaser(IPlayer player, CBasePlayerWeapon weapon, int clip1, int reservedAmmo)
+    {
+        try
+        {
+            var pawn = player.PlayerPawn!;
+            if (!weapon.IsValid) return;
+
+            var taser = weapon.As<CWeaponTaser>();
+            var fireTime = taser.FireTime.Value;
+            var lastAttackTick = taser.LastAttackTick;
+            pawn.WeaponServices!.RemoveWeapon(weapon);
+            var newWeapon = pawn.ItemServices!.GiveItem<CWeaponTaser>("weapon_taser");
+            newWeapon.Clip1 = clip1;
+            newWeapon.ReserveAmmo[0] = reservedAmmo;
+            newWeapon.FireTime.Value = fireTime;
+            newWeapon.LastAttackTick = lastAttackTick;
+        }
+        catch (Exception e)
+        {
+            Logger.LogDebug("[OSTORA] Failed to regive taser: {Message}", e.Message);
+        }
     }
 
     // ================================================================
