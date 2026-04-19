@@ -30,6 +30,14 @@ jobs:
     - name: Test
       run: dotnet test --no-build --configuration Release
 
+    - name: Create Release Archive
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      run: |
+        mkdir -p release/OstoraWeaponSkins
+        cp -r build/net10.0/* release/OstoraWeaponSkins/
+        cd release
+        zip -r OstoraWeaponSkins.zip OstoraWeaponSkins
+
     - name: Publish Release
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v1
@@ -38,11 +46,6 @@ jobs:
         name: Release v${{ github.run_number }}
         draft: false
         prerelease: false
-        files: |
-          build/net10.0/**/*.dll
-          build/net10.0/**/*.pdb
-          build/net10.0/**/*.json
-          build/net10.0/resources/**/*
-          build/net10.0/runtimes/**/*
+        files: release/OstoraWeaponSkins.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
