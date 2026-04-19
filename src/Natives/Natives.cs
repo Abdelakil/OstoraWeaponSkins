@@ -70,6 +70,19 @@ public class Natives
     public event Action<CCSPlayerInventory, SOID_t>? OnSOCacheUnsubscribed;
     public event Action<CCSPlayer_ItemServices, CBasePlayerWeapon>? OnGiveNamedItemPost;
 
+    // ── One-shot pEconItemView override for the next GiveNamedItem call on this thread.
+    // When the plugin regives a weapon via ItemServices.GiveItem(name), the caller
+    // passes pEconItemView = 0, which makes the native build the weapon without the
+    // loadout's CustomAttributeData (so stickers / keychain / StatTrak don't transfer
+    // to the new entity). Setting this before GiveItem lets the hook substitute the
+    // proper loadout CEconItemView pointer — matching the native rejoin spawn path.
+    // The override is consumed on the first hook invocation on this thread.
+    [ThreadStatic] private static nint _nextGiveNamedItemViewOverride;
+    public static void SetNextGiveNamedItemViewOverride(nint address) =>
+        _nextGiveNamedItemViewOverride = address;
+    public static void ClearNextGiveNamedItemViewOverride() =>
+        _nextGiveNamedItemViewOverride = 0;
+
     public Natives(ISwiftlyCore core, ILogger logger)
     {
         Core = core;
@@ -192,6 +205,16 @@ public class Natives
                     nint ret = 0;
                     try
                     {
+                        // Consume one-shot override: substitute the loadout view set
+                        // by SetNextGiveNamedItemViewOverride so stickers / keychain /
+                        // StatTrak are baked into the new entity at creation. We do
+                        // this unconditionally when an override is set, because
+                        // ItemServices.GiveItem(name) passes a non-null but empty
+                        // default CEconItemView — so we must actively replace it.
+                        var over = _nextGiveNamedItemViewOverride;
+                        _nextGiveNamedItemViewOverride = 0;
+                        if (over != 0) pEconItemView = over;
+
                         ret = next()(pItemServices, pItemName, subtype, pEconItemView, a5, a6);
                         if (ret != 0)
                         {

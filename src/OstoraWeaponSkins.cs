@@ -53,6 +53,16 @@ public class OstoraWeaponSkins : BasePlugin
     // which was not safe with multiple concurrent refreshes).
     private readonly ConcurrentDictionary<ulong, byte> _autoRefreshFlags = new();
 
+    // ── Debug logging toggle. Set to true to enable per-event spam
+    // (SOCache subscribe/unsubscribe, per-player apply/refresh/regive logs,
+    // econ parser counts). Warnings and errors are always emitted.
+    public static bool DebugLogging { get; set; } = false;
+
+    private void DebugLog(string message, params object?[] args)
+    {
+        if (DebugLogging) Logger.LogInformation(message, args);
+    }
+
     public OstoraWeaponSkins(ISwiftlyCore core) : base(core) { }
 
     // ================================================================
@@ -84,7 +94,7 @@ public class OstoraWeaponSkins : BasePlugin
         Native.OnSOCacheSubscribed += (_inv, soid) =>
         {
             _subscribedSteamIds[soid.SteamID] = 1;
-            Logger.LogInformation("[OSTORA] SOCache subscribed for {SteamID}", soid.SteamID);
+            DebugLog("[OSTORA] SOCache subscribed for {SteamID}", soid.SteamID);
         };
         Native.OnSOCacheUnsubscribed += (_inv, soid) =>
         {
@@ -92,7 +102,7 @@ public class OstoraWeaponSkins : BasePlugin
             _loadEpochs.TryRemove(soid.SteamID, out _);
             _autoRefreshFlags.TryRemove(soid.SteamID, out _);
             _defaultModels.TryRemove(soid.SteamID, out _);
-            Logger.LogInformation("[OSTORA] SOCache unsubscribed for {SteamID}", soid.SteamID);
+            DebugLog("[OSTORA] SOCache unsubscribed for {SteamID}", soid.SteamID);
         };
 
         // GiveNamedItem hook → apply weapon/knife attributes on pickup
@@ -106,6 +116,9 @@ public class OstoraWeaponSkins : BasePlugin
 
         // RCON command: ws_refreshskins <steamid64>
         Core.Command.RegisterCommand("ws_refreshskins", OnRefreshCommand, registerRaw: true);
+
+        // RCON command: ws_debug <0|1> — toggles per-event info logging at runtime.
+        Core.Command.RegisterCommand("ws_debug", OnDebugCommand, registerRaw: true);
 
         Logger.LogInformation("[OSTORA] Loaded.");
 
@@ -298,7 +311,7 @@ public class OstoraWeaponSkins : BasePlugin
                     var teamGloves  = gloves .Where(g => g.Team == team).ToList();
                     var teamMusic   = music  .FirstOrDefault(m => m.Team == team);
 
-                    Logger.LogInformation(
+                    DebugLog(
                         "[OSTORA] Applying for {SteamID} team={Team}: {Weapons} weapons, {Knives} knives, {Gloves} gloves, music={Music}",
                         steamId, team, teamWeapons.Count, teamKnives.Count, teamGloves.Count, teamMusic?.MusicID ?? -1);
 
@@ -325,7 +338,12 @@ public class OstoraWeaponSkins : BasePlugin
                             var applyGlove   = gloves .FirstOrDefault(g => g.Team == team2);
                             var applyAgent   = agents .FirstOrDefault(a => a.Team == team2);
 
-                            ApplyWeaponAttributesFromData(p2, applyWeapons, applyKnives, team2);
+                            // Re-give the player's weapons so they're rebuilt from the freshly-updated
+                            // loadout's CustomAttributeData. This is the only reliable way to get
+                            // stickers / keychains / StatTrak to network correctly on an already-connected
+                            // client (in-place NetworkedDynamicAttributes writes do not propagate stickers
+                            // on already-equipped weapons — they only reliably network paint/wear/seed).
+                            RegivePlayerWeaponsFromData(p2, applyWeapons, applyKnives, team2);
 
                             if (applyGlove != null && TryGetPlayerInventory(p2, out var inv2))
                                 ApplyGloveVisualFromData(p2, applyGlove, inv2, team2);
@@ -333,7 +351,7 @@ public class OstoraWeaponSkins : BasePlugin
                             if (applyAgent.AgentIndex != 0)
                                 ApplyAgentVisualFromData(p2, applyAgent.AgentIndex);
 
-                            Logger.LogInformation("[OSTORA] Spawn load complete for {SteamID} (Team: {Team})", steamId, team2);
+                            DebugLog("[OSTORA] Spawn load complete for {SteamID} (Team: {Team})", steamId, team2);
 
                             // Auto-refresh after 0.5s to fix glove textures
                             Core.Scheduler.DelayBySeconds(0.5f, () =>
@@ -359,6 +377,34 @@ public class OstoraWeaponSkins : BasePlugin
     }
 
     // ================================================================
+    //  RCON: ws_debug <0|1>  — toggle per-event info logging
+    // ================================================================
+    private void OnDebugCommand(SwiftlyS2.Shared.Commands.ICommandContext context)
+    {
+        if (context.Args.Length < 1)
+        {
+            Logger.LogInformation("[OSTORA] Debug logging is {State} (usage: ws_debug <0|1>)",
+                DebugLogging ? "ON" : "OFF");
+            return;
+        }
+
+        var arg = context.Args[0];
+        bool value;
+        if (arg == "1" || arg.Equals("on", StringComparison.OrdinalIgnoreCase) || arg.Equals("true", StringComparison.OrdinalIgnoreCase))
+            value = true;
+        else if (arg == "0" || arg.Equals("off", StringComparison.OrdinalIgnoreCase) || arg.Equals("false", StringComparison.OrdinalIgnoreCase))
+            value = false;
+        else
+        {
+            Logger.LogWarning("[OSTORA] ws_debug: expected 0|1|on|off|true|false, got: {Arg}", arg);
+            return;
+        }
+
+        DebugLogging = value;
+        Logger.LogInformation("[OSTORA] Debug logging {State}", value ? "ENABLED" : "DISABLED");
+    }
+
+    // ================================================================
     //  RCON REFRESH (NO CACHE - always from DB)
     // ================================================================
     private void OnRefreshCommand(SwiftlyS2.Shared.Commands.ICommandContext context)
@@ -373,7 +419,7 @@ public class OstoraWeaponSkins : BasePlugin
         // Atomic per-player auto-refresh check.
         var isAuto = _autoRefreshFlags.TryRemove(steamId, out _);
 
-        Logger.LogInformation("[OSTORA] Refresh requested for {SteamID} (Auto: {IsAuto})", steamId, isAuto);
+        DebugLog("[OSTORA] Refresh requested for {SteamID} (Auto: {IsAuto})", steamId, isAuto);
 
         var epoch = BumpEpoch(steamId);
 
@@ -453,7 +499,7 @@ public class OstoraWeaponSkins : BasePlugin
                             if (applyAgent.AgentIndex != 0)
                                 ApplyAgentVisualFromData(p2, applyAgent.AgentIndex);
 
-                            Logger.LogInformation("[OSTORA] Refresh complete for {SteamID}", steamId);
+                            DebugLog("[OSTORA] Refresh complete for {SteamID}", steamId);
 
                             // Auto-refresh after 0.5s to fix glove textures (only if this
                             // invocation was not itself an auto-refresh).
@@ -578,30 +624,23 @@ public class OstoraWeaponSkins : BasePlugin
 
         if (skin.Nametag != null) item.CustomName = skin.Nametag;
 
+        // Apply stickers the same way keychains are applied below: only
+        // NetworkedDynamicAttributes, no AttributeList duplicate, no conditional
+        // schema branch. Writing to AttributeList in addition to NetworkedDynamicAttributes
+        // was preventing stickers from displaying on live weapons.
         for (int i = 0; i < 5; i++)
         {
             var sticker = skin.GetSticker(i);
             if (sticker == null) continue;
 
-            var stickerIdFloat = BitConverter.Int32BitsToSingle(sticker.Id);
-            item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} id", stickerIdFloat);
-            item.AttributeList.SetOrAddAttribute($"sticker slot {i} id", stickerIdFloat);
-
-            if (sticker.Schema != 1337)
-            {
-                var schemaFloat = BitConverter.Int32BitsToSingle(sticker.Schema);
-                item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} schema", schemaFloat);
-                item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} offset x", sticker.OffsetX);
-                item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} offset y", sticker.OffsetY);
-            }
-
+            item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} id", BitConverter.Int32BitsToSingle(sticker.Id));
             item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} wear", sticker.Wear);
             item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} scale", sticker.Scale);
             item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} rotation", sticker.Rotation);
-
-            item.AttributeList.SetOrAddAttribute($"sticker slot {i} wear", sticker.Wear);
-            item.AttributeList.SetOrAddAttribute($"sticker slot {i} scale", sticker.Scale);
-            item.AttributeList.SetOrAddAttribute($"sticker slot {i} rotation", sticker.Rotation);
+            item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} offset x", sticker.OffsetX);
+            item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} offset y", sticker.OffsetY);
+            if (sticker.Schema != 1337)
+                item.NetworkedDynamicAttributes.SetOrAddAttribute($"sticker slot {i} schema", BitConverter.Int32BitsToSingle(sticker.Schema));
         }
 
         var keychain = skin.Keychain0;
@@ -798,8 +837,25 @@ public class OstoraWeaponSkins : BasePlugin
                     {
                         if (!player.IsAlive) return;
                         if (player.SteamID != playerSteamId) return;
+
+                        // Re-derive the player's inventory on the game thread, with the
+                        // SteamID-match assertion — preserves the cross-player
+                        // contamination guard.
+                        if (!TryGetPlayerInventory(player, out var inv)) return;
+                        var knifeView = inv.TryGetLoadoutItemViewByDefIndex(team, knife.DefinitionIndex);
+
                         pawn.WeaponServices!.RemoveWeaponBySlot(gear_slot_t.GEAR_SLOT_KNIFE);
-                        pawn.ItemServices!.GiveItem("weapon_knife");
+
+                        // Substitute pEconItemView in the next GiveNamedItem call so the
+                        // knife entity is built with the loadout's CustomAttributeData
+                        // (paintkit/wear/seed/nametag/StatTrak). Always cleared in finally.
+                        try
+                        {
+                            Natives.SetNextGiveNamedItemViewOverride(knifeView?.Address ?? 0);
+                            pawn.ItemServices!.GiveItem("weapon_knife");
+                        }
+                        finally { Natives.ClearNextGiveNamedItemViewOverride(); }
+
                         pawn.WeaponServices!.SelectWeaponBySlot(gear_slot_t.GEAR_SLOT_KNIFE);
                     }
                     catch (Exception e)
@@ -834,9 +890,25 @@ public class OstoraWeaponSkins : BasePlugin
                         }
                         else
                         {
+                            // Re-derive inventory (with SteamID-match cross-contamination
+                            // guard) and look up the loadout view for this def index.
+                            if (!TryGetPlayerInventory(player, out var inv)) return;
+                            var loadoutView = inv.TryGetLoadoutItemViewByDefIndex(team, defIdx);
+
                             var name = Core.Helpers.GetClassnameByDefinitionIndex(defIdx)!;
+                            DebugLog(
+                                "[OSTORA] Regive weapon {Name} def={Def} for {SteamID} team={Team} loadoutView=0x{View:X}",
+                                name, defIdx, playerSteamId, team, loadoutView?.Address ?? 0);
                             pawn.WeaponServices!.RemoveWeapon(weaponRef);
-                            var newWeapon = pawn.ItemServices!.GiveItem<CBasePlayerWeapon>(name);
+
+                            CBasePlayerWeapon newWeapon;
+                            try
+                            {
+                                Natives.SetNextGiveNamedItemViewOverride(loadoutView?.Address ?? 0);
+                                newWeapon = pawn.ItemServices!.GiveItem<CBasePlayerWeapon>(name);
+                            }
+                            finally { Natives.ClearNextGiveNamedItemViewOverride(); }
+
                             newWeapon.Clip1 = clip1;
                             newWeapon.ReserveAmmo[0] = reservedAmmo;
                         }

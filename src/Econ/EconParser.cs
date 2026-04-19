@@ -353,7 +353,8 @@ public static class EconParser
             }
         }
 
-        logger.LogInformation("[OSTORA] Parsed {Count} stickers", ParsedData.Stickers.Count);
+        if (OstoraWeaponSkins.DebugLogging)
+            logger.LogInformation("[OSTORA] Parsed {Count} stickers", ParsedData.Stickers.Count);
     }
 
     // Signature packs need special handling - they reference rare/legendary variants
@@ -549,6 +550,7 @@ public static class EconParser
             }
         }
 
-        logger.LogInformation("[OSTORA] Parsed {Count} sticker collections", ParsedData.StickerCollections.Count);
+        if (OstoraWeaponSkins.DebugLogging)
+            logger.LogInformation("[OSTORA] Parsed {Count} sticker collections", ParsedData.StickerCollections.Count);
     }
 }

@@ -336,6 +336,19 @@ public class CCSPlayerInventory : INativeHandle
         }
     }
 
+    /// <summary>
+    /// Look up the loadout <see cref="CEconItemView"/> for a given team + definition
+    /// index. This is the same view the native spawn code passes to GiveNamedItem on
+    /// client (re)connect, so it carries the full CustomAttributeData (stickers,
+    /// keychain, StatTrak, nametag) produced by <see cref="UpdateWeaponSkin"/> et al.
+    /// </summary>
+    public CEconItemView? TryGetLoadoutItemViewByDefIndex(Team team, ushort definitionIndex)
+    {
+        if (TryGetLoadoutItem(team, definitionIndex, out var indices))
+            return GetItemInLoadout(indices.team, indices.slot);
+        return null;
+    }
+
     public bool TryGetItemID(Team team, ushort definitionIndex, out ulong itemID)
     {
         itemID = 0;
@@ -378,29 +391,39 @@ public class CCSPlayerInventory : INativeHandle
         _defaultLoadouts[team, loadout_slot_t.LOADOUT_SLOT_CLOTHING_HANDS].ItemId;
 
     // ── Update inventory items ──────────────────────────────────
+    //
+    // Strategy: if the loadout already references a NON-default CEconItem we own
+    // for this (team, defIndex / slot), mutate THAT item's CustomAttributeData in
+    // place and fire SOUpdated. This keeps ItemID stable so the loadout's
+    // CEconItemView continues to reference valid memory — necessary because
+    // destroying and recreating the underlying item leaves the view's sticker
+    // snapshot dangling / stale, which is why sticker edits on the same skin
+    // silently failed to apply (only a brand-new skin worked).
+    //
+    // Only when there is no existing owned item for this slot do we create a
+    // fresh CEconItem and add it to the SOCache.
+
     public void UpdateWeaponSkin(WeaponSkinData data)
     {
         Core.Scheduler.NextWorldUpdate(() =>
         {
+            var defaultId = GetDefaultWeaponSkinItemID(data.Team, data.DefinitionIndex);
+            if (TryGetItemID(data.Team, data.DefinitionIndex, out var existingId) &&
+                existingId != defaultId &&
+                TryGetEconItemByItemID(existingId, out var existing))
+            {
+                // In-place mutation: preserves ItemID and the loadout CEconItemView's
+                // backing pointer, so stickers/keychain refresh reliably.
+                existing.Apply(data);
+                SOUpdated(SteamID, existing);
+                return;
+            }
+
             var item = Natives.Instance.CreateCEconItemInstance();
-            if (TryGetItemID(data.Team, data.DefinitionIndex, out var itemID) &&
-                TryGetEconItemByItemID(itemID, out var oldItem))
-            {
-                item.AccountID = new CSteamID(SteamID).GetAccountID().m_AccountID;
-                item.ItemID = GetNewItemID();
-                item.InventoryPosition = GetNewInventoryPosition();
-                if (itemID != GetDefaultWeaponSkinItemID(data.Team, data.DefinitionIndex))
-                    SOCache.RemoveObject(oldItem);
-                SODestroyed(SteamID, oldItem);
-                UpdateLoadoutItem(data.Team, data.DefinitionIndex, item.ItemID);
-            }
-            else
-            {
-                item.AccountID = new CSteamID(SteamID).GetAccountID().m_AccountID;
-                item.ItemID = GetNewItemID();
-                item.InventoryPosition = GetNewInventoryPosition();
-                UpdateLoadoutItem(data.Team, data.DefinitionIndex, item.ItemID);
-            }
+            item.AccountID = new CSteamID(SteamID).GetAccountID().m_AccountID;
+            item.ItemID = GetNewItemID();
+            item.InventoryPosition = GetNewInventoryPosition();
+            UpdateLoadoutItem(data.Team, data.DefinitionIndex, item.ItemID);
             item.Apply(data);
             SOCache.AddObject(item);
             SOCreated(SteamID, item);
@@ -412,14 +435,24 @@ public class CCSPlayerInventory : INativeHandle
     {
         Core.Scheduler.NextWorldUpdate(() =>
         {
-            var item = Natives.Instance.CreateCEconItemInstance();
             ref var loadout = ref Loadouts[data.Team, loadout_slot_t.LOADOUT_SLOT_MELEE];
-            if (IsValidItemID(loadout.ItemId) && TryGetEconItemByItemID(loadout.ItemId, out var oldItem))
+            var defaultId = GetDefaultKnifeSkinItemID(data.Team);
+
+            if (IsValidItemID(loadout.ItemId) &&
+                loadout.ItemId != defaultId &&
+                TryGetEconItemByItemID(loadout.ItemId, out var existing))
             {
-                if (loadout.ItemId != GetDefaultKnifeSkinItemID(data.Team))
-                    SOCache.RemoveObject(oldItem);
-                SODestroyed(SteamID, oldItem);
+                // In-place mutation for sticker/nametag/StatTrak/paint edits. If the
+                // knife *definition* itself changed, we also update the definition
+                // index on the same item so the loadout stays consistent.
+                existing.DefinitionIndex = data.DefinitionIndex;
+                loadout.DefinitionIndex = data.DefinitionIndex;
+                existing.Apply(data);
+                SOUpdated(SteamID, existing);
+                return;
             }
+
+            var item = Natives.Instance.CreateCEconItemInstance();
             item.AccountID = new CSteamID(SteamID).GetAccountID().m_AccountID;
             item.ItemID = GetNewItemID();
             item.InventoryPosition = GetNewInventoryPosition();
@@ -436,14 +469,21 @@ public class CCSPlayerInventory : INativeHandle
     {
         Core.Scheduler.NextWorldUpdate(() =>
         {
-            var item = Natives.Instance.CreateCEconItemInstance();
             ref var loadout = ref Loadouts[data.Team, loadout_slot_t.LOADOUT_SLOT_CLOTHING_HANDS];
-            if (IsValidItemID(loadout.ItemId) && TryGetEconItemByItemID(loadout.ItemId, out var oldItem))
+            var defaultId = GetDefaultGloveSkinItemID(data.Team);
+
+            if (IsValidItemID(loadout.ItemId) &&
+                loadout.ItemId != defaultId &&
+                TryGetEconItemByItemID(loadout.ItemId, out var existing))
             {
-                if (loadout.ItemId != GetDefaultGloveSkinItemID(data.Team))
-                    SOCache.RemoveObject(oldItem);
-                SODestroyed(SteamID, oldItem);
+                existing.DefinitionIndex = data.DefinitionIndex;
+                loadout.DefinitionIndex = data.DefinitionIndex;
+                existing.Apply(data);
+                SOUpdated(SteamID, existing);
+                return;
             }
+
+            var item = Natives.Instance.CreateCEconItemInstance();
             item.AccountID = new CSteamID(SteamID).GetAccountID().m_AccountID;
             item.ItemID = GetNewItemID();
             item.InventoryPosition = GetNewInventoryPosition();
