@@ -26,3 +26,19 @@ jobs:
 
     - name: Test
       run: dotnet test --no-build --configuration Release
+
+    - name: Publish Release
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ github.run_number }}
+        name: Release v${{ github.run_number }}
+        draft: false
+        prerelease: false
+        files: |
+          build/**/*.dll
+          build/**/*.pdb
+          build/**/*.json
+          build/resources/**/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
