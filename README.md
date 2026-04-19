@@ -1,6 +1,8 @@
 # OstoraWeaponSkins
 
-A CS2 (Counter-Strike 2) plugin built with SwiftlyS2 that allows server administrators to apply custom weapon skins, knives, gloves, music kits, stickers, and keychains to players based on database configuration.
+A CS2 (Counter-Strike 2) plugin built with SwiftlyS2 that players to apply custom weapon skins, knives, gloves, music kits, stickers, and keychains to players based on database configuration.
+
+This plugin is intended to be used with web-based skinchangers.
 
 This project is fully based on [samyycX/WeaponSkins](https://github.com/samyycX/WeaponSkins).
 
