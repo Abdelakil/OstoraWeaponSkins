@@ -2,6 +2,8 @@
 
 A CS2 (Counter-Strike 2) plugin built with SwiftlyS2 that allows server administrators to apply custom weapon skins, knives, gloves, music kits, stickers, and keychains to players based on database configuration.
 
+This project is fully based on [samyycX/WeaponSkins](https://github.com/samyycX/WeaponSkins).
+
 ## Features
 
 - **Weapon Skins**: Apply custom paint kits to weapons with floats, patterns, and nametags
@@ -18,7 +20,7 @@ A CS2 (Counter-Strike 2) plugin built with SwiftlyS2 that allows server administ
 
 1. Build the project: `dotnet build --configuration Release`
 2. Copy the `build/` directory contents to your CS2 server's SwiftlyS2 plugins directory
-3. Add "OstoraWeaponSkins" to your SwiftlyS2 `database.jsonc` plugins list
+3. Add "OstoraWeaponSkins" to your SwiftlyS2 `database.jsonc` config
 4. Configure your database connection in the plugin settings
 5. Restart your CS2 server
 
