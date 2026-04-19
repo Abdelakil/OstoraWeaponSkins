@@ -14,7 +14,7 @@ public class Database
 
     public void Start(IDatabaseService dbService)
     {
-        var info = dbService.GetConnectionInfo("weaponskins");
+        var info = dbService.GetConnectionInfo("OstoraWeaponskins");
         var protocol = info.Driver switch
         {
             "mysql" => DataType.MySql,
@@ -22,7 +22,7 @@ public class Database
             "sqlite" => DataType.Sqlite,
             _ => throw new Exception($"Unsupported DB driver: {info.Driver}"),
         };
-        var conn = dbService.GetConnection("weaponskins");
+        var conn = dbService.GetConnection("OstoraWeaponskins");
         Fsql = new FreeSqlBuilder()
             .UseConnectionString(protocol, conn.ConnectionString)
             .UseAdoConnectionPool(true)
