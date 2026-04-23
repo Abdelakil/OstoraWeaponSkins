@@ -53,6 +53,11 @@ public class OstoraWeaponSkins : BasePlugin
     // which was not safe with multiple concurrent refreshes).
     private readonly ConcurrentDictionary<ulong, byte> _autoRefreshFlags = new();
 
+    // ── In-memory skin cache for synchronous lookup in OnGiveNamedItemPost.
+    // Key: steamId, Value: (weapons list, knives list, gloves list, music list)
+    private readonly ConcurrentDictionary<ulong, (List<WeaponSkinData> Weapons, List<KnifeSkinData> Knives,
+        List<GloveData> Gloves, List<MusicKitData> Music)> _skinCache = new();
+
     // ── Debug logging toggle. Set to true to enable per-event spam
     // (SOCache subscribe/unsubscribe, per-player apply/refresh/regive logs,
     // econ parser counts). Warnings and errors are always emitted.
@@ -321,6 +326,9 @@ public class OstoraWeaponSkins : BasePlugin
                     foreach (var g in teamGloves)  inv.UpdateGloveSkin(g);
                     if (teamMusic != null) inv.UpdateMusicKit(teamMusic.MusicID);
 
+                    // Populate in-memory cache for synchronous lookup in OnGiveNamedItemPost
+                    _skinCache[steamId] = (weapons, knives, gloves, music);
+
                     // Apply visuals after inventory updates settle (2 ticks)
                     Core.Scheduler.NextWorldUpdate(() =>
                     {
@@ -473,6 +481,9 @@ public class OstoraWeaponSkins : BasePlugin
                     foreach (var g in teamGloves)  inv.UpdateGloveSkin(g);
                     if (teamMusic != null) inv.UpdateMusicKit(teamMusic.MusicID);
 
+                    // Populate in-memory cache for synchronous lookup in OnGiveNamedItemPost
+                    _skinCache[steamId] = (weapons, knives, gloves, music);
+
                     Core.Scheduler.NextWorldUpdate(() =>
                     {
                         Core.Scheduler.NextWorldUpdate(() =>
@@ -523,18 +534,10 @@ public class OstoraWeaponSkins : BasePlugin
     }
 
     // ================================================================
-    //  GIVE NAMED ITEM POST → apply skin attributes on weapon pickup (NO CACHE - query DB)
+    //  GIVE NAMED ITEM POST → apply skin attributes on weapon pickup (uses in-memory cache)
     // ================================================================
     private void OnGiveNamedItemPost(CCSPlayer_ItemServices services, CBasePlayerWeapon weapon)
     {
-        ulong steamId;
-        Team team;
-        ushort defIndex;
-
-        // Resolve the owning player ONCE on the game thread, then capture only
-        // value types across the async boundary. The weapon reference itself is
-        // re-verified before we apply anything to avoid cross-player contamination
-        // if the weapon changes owner while the DB query is in flight.
         try
         {
             var ownerHandle = weapon.OwnerEntity;
@@ -546,56 +549,35 @@ public class OstoraWeaponSkins : BasePlugin
             var controller = controllerHandle.Value?.As<CCSPlayerController>();
             if (controller == null || !controller.IsValid) return;
 
-            steamId  = controller.SteamID;
-            team     = controller.Team;
-            defIndex = weapon.AttributeManager.Item.ItemDefinitionIndex;
-        }
-        catch (Exception e)
-        {
-            Logger.LogError(e, "[OSTORA] GiveNamedItemPost resolve error");
-            return;
-        }
+            var steamId  = controller.SteamID;
+            var team     = controller.Team;
+            var defIndex = weapon.AttributeManager.Item.ItemDefinitionIndex;
 
-        var weaponRef = weapon;
-
-        Task.Run(async () =>
-        {
-            try
+            // Synchronous cache lookup - no async DB delay like reference plugin
+            if (!_skinCache.TryGetValue(steamId, out var cached))
             {
-                if (SkinUtils.IsKnife((int)defIndex))
-                {
-                    var knives = await Db.GetKnifeSkinsAsync(steamId);
-                    var knife = knives.FirstOrDefault(k => k.SteamID == steamId && k.Team == team);
-                    if (knife == null) return;
-
-                    Core.Scheduler.NextWorldUpdate(() =>
-                    {
-                        // Guard: weapon must still belong to the player we queried for.
-                        if (!VerifyWeaponOwner(weaponRef, steamId, team)) return;
-                        ApplyKnifeAttributes(weaponRef, knife);
-                    });
-                }
-                else if (SkinUtils.IsWeapon((int)defIndex))
-                {
-                    var skins = await Db.GetWeaponSkinsAsync(steamId);
-                    var skin = skins.FirstOrDefault(s =>
-                        s.SteamID == steamId && s.Team == team && s.DefinitionIndex == defIndex);
-                    if (skin == null) return;
-
-                    Core.Scheduler.NextWorldUpdate(() =>
-                    {
-                        if (!VerifyWeaponOwner(weaponRef, steamId, team)) return;
-                        // Also verify the weapon's definition index hasn't changed.
-                        if (weaponRef.AttributeManager.Item.ItemDefinitionIndex != defIndex) return;
-                        ApplyWeaponAttributes(weaponRef, skin);
-                    });
-                }
+                DebugLog("[OSTORA] No cached skins for {SteamID} in OnGiveNamedItemPost", steamId);
+                return;
             }
-            catch (Exception ex)
+
+            if (SkinUtils.IsKnife((int)defIndex))
             {
-                Logger.LogError(ex, "[OSTORA] GiveNamedItemPost DB error for {SteamID}", steamId);
+                var knife = cached.Knives.FirstOrDefault(k => k.SteamID == steamId && k.Team == team);
+                if (knife != null)
+                    ApplyKnifeAttributes(weapon, knife);
             }
-        });
+            else if (SkinUtils.IsWeapon((int)defIndex))
+            {
+                var skin = cached.Weapons.FirstOrDefault(s =>
+                    s.SteamID == steamId && s.Team == team && s.DefinitionIndex == defIndex);
+                if (skin != null)
+                    ApplyWeaponAttributes(weapon, skin);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[OSTORA] GiveNamedItemPost error");
+        }
     }
 
     // ================================================================
@@ -702,21 +684,9 @@ public class OstoraWeaponSkins : BasePlugin
         {
             if (!player.IsAlive) return;
 
-            // Model swap trick to force glove refresh
-            var model = pawn.CBodyComponent!.SceneNode!.GetSkeletonInstance().ModelState.ModelName;
-            pawn.SetModel("characters/models/tm_jumpsuit/tm_jumpsuit_varianta.vmdl");
-            pawn.SetModel(model);
-
-            // Reset and set Initialized immediately after model swap (key timing!)
             var econGloves = pawn.EconGloves;
-            econGloves.Initialized = false;
             econGloves.Initialized = true;
-
-            Core.Scheduler.NextWorldUpdate(() =>
-            {
-                if (!player.IsAlive) return;
-                ApplyGloveAttributesFromData(pawn, econGloves, glove, inv, team);
-            });
+            ApplyGloveAttributesFromData(pawn, econGloves, glove, inv, team);
         });
     }
 
@@ -753,7 +723,11 @@ public class OstoraWeaponSkins : BasePlugin
         econGloves.AttributeList.SetOrAddAttribute("set item texture wear", glove.PaintkitWear);
 
         // Set bodygroup to show gloves
-        pawn.AcceptInput("SetBodygroup", "default_gloves,1");
+        pawn.AcceptInput("SetBodygroup", "first_or_third_person,0");
+        Core.Scheduler.DelayBySeconds(0.2f, () =>
+        {
+            pawn.AcceptInput("SetBodygroup", "first_or_third_person,1");
+        });
     }
 
     // ================================================================
@@ -846,15 +820,10 @@ public class OstoraWeaponSkins : BasePlugin
 
                         pawn.WeaponServices!.RemoveWeaponBySlot(gear_slot_t.GEAR_SLOT_KNIFE);
 
-                        // Substitute pEconItemView in the next GiveNamedItem call so the
-                        // knife entity is built with the loadout's CustomAttributeData
-                        // (paintkit/wear/seed/nametag/StatTrak). Always cleared in finally.
-                        try
-                        {
-                            Natives.SetNextGiveNamedItemViewOverride(knifeView?.Address ?? 0);
-                            pawn.ItemServices!.GiveItem("weapon_knife");
-                        }
-                        finally { Natives.ClearNextGiveNamedItemViewOverride(); }
+                        // GiveItem without pEconItemView override — ApplyKnifeAttributes
+                        // in GiveNamedItemPost will set the seed via NetworkedDynamicAttributes.
+                        // Reference plugin doesn't use pEconItemView override.
+                        pawn.ItemServices!.GiveItem("weapon_knife");
 
                         pawn.WeaponServices!.SelectWeaponBySlot(gear_slot_t.GEAR_SLOT_KNIFE);
                     }
@@ -901,13 +870,10 @@ public class OstoraWeaponSkins : BasePlugin
                                 name, defIdx, playerSteamId, team, loadoutView?.Address ?? 0);
                             pawn.WeaponServices!.RemoveWeapon(weaponRef);
 
-                            CBasePlayerWeapon newWeapon;
-                            try
-                            {
-                                Natives.SetNextGiveNamedItemViewOverride(loadoutView?.Address ?? 0);
-                                newWeapon = pawn.ItemServices!.GiveItem<CBasePlayerWeapon>(name);
-                            }
-                            finally { Natives.ClearNextGiveNamedItemViewOverride(); }
+                            // GiveItem without pEconItemView override — ApplyWeaponAttributes
+                            // in GiveNamedItemPost will set the seed via NetworkedDynamicAttributes.
+                            // Reference plugin doesn't use pEconItemView override.
+                            var newWeapon = pawn.ItemServices!.GiveItem<CBasePlayerWeapon>(name);
 
                             newWeapon.Clip1 = clip1;
                             newWeapon.ReserveAmmo[0] = reservedAmmo;
