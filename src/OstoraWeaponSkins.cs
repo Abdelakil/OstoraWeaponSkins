@@ -126,6 +126,9 @@ public class OstoraWeaponSkins : BasePlugin
         // RCON command: ws_debug <0|1> — toggles per-event info logging at runtime.
         Core.Command.RegisterCommand("ws_debug", OnDebugCommand, registerRaw: true);
 
+        // RCON command: ws_status — prints diagnostic info (cache sizes, memory usage)
+        Core.Command.RegisterCommand("ws_status", OnStatusCommand, registerRaw: true);
+
         Logger.LogInformation("[OSTORA] Loaded.");
 
         // Hot reload: apply to existing players
@@ -411,6 +414,26 @@ public class OstoraWeaponSkins : BasePlugin
 
         DebugLogging = value;
         Logger.LogInformation("[OSTORA] Debug logging {State}", value ? "ENABLED" : "DISABLED");
+    }
+
+    // ================================================================
+    //  RCON: ws_status — print diagnostic info (cache sizes, memory usage)
+    // ================================================================
+    private void OnStatusCommand(SwiftlyS2.Shared.Commands.ICommandContext context)
+    {
+        var skinCacheCount = _skinCache.Count;
+        var loadEpochCount = _loadEpochs.Count;
+        var subscribedCount = _subscribedSteamIds.Count;
+        var defaultModelsCount = _defaultModels.Sum(kvp => kvp.Value.Count);
+        var managedMemory = GC.GetTotalMemory(false) / 1024;
+
+        Logger.LogInformation("=== OSTORA WeaponSkins Status ===");
+        Logger.LogInformation("Skin cache entries: {Count}", skinCacheCount);
+        Logger.LogInformation("Load epochs: {Count}", loadEpochCount);
+        Logger.LogInformation("Subscribed SteamIDs: {Count}", subscribedCount);
+        Logger.LogInformation("Default model entries: {Count}", defaultModelsCount);
+        Logger.LogInformation("Managed memory: {Memory} KB", managedMemory);
+        Logger.LogInformation("================================");
     }
 
     // ================================================================
