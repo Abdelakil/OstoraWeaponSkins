@@ -553,6 +553,13 @@ public class OstoraWeaponSkins : BasePlugin
             var team     = controller.Team;
             var defIndex = weapon.AttributeManager.Item.ItemDefinitionIndex;
 
+            // Skip skin application for dropped weapons (AccountID doesn't match player's SteamID)
+            if (weapon.AttributeManager.Item.AccountID != steamId)
+            {
+                DebugLog("[OSTORA] Skipping dropped weapon for {SteamID} (AccountID={AccountID})", steamId, weapon.AttributeManager.Item.AccountID);
+                return;
+            }
+
             // Synchronous cache lookup - no async DB delay like reference plugin
             if (!_skinCache.TryGetValue(steamId, out var cached))
             {
