@@ -418,6 +418,8 @@ public class CCSPlayerInventory : INativeHandle
 
                 if (existingId != GetDefaultWeaponSkinItemID(data.Team, data.DefinitionIndex))
                     SOCache.RemoveObject(oldItem);
+                if (oldItem.pCustomData != 0)
+                    Core.Memory.Free(oldItem.pCustomData);
                 SODestroyed(SteamID, oldItem);
 
                 UpdateLoadoutItem(data.Team, data.DefinitionIndex, item.ItemID);
@@ -448,6 +450,8 @@ public class CCSPlayerInventory : INativeHandle
             {
                 if (loadout.ItemId != GetDefaultKnifeSkinItemID(data.Team))
                     SOCache.RemoveObject(oldItem);
+                if (oldItem.pCustomData != 0)
+                    Core.Memory.Free(oldItem.pCustomData);
                 SODestroyed(SteamID, oldItem);
             }
 
@@ -474,6 +478,8 @@ public class CCSPlayerInventory : INativeHandle
             {
                 if (loadout.ItemId != GetDefaultGloveSkinItemID(data.Team))
                     SOCache.RemoveObject(oldItem);
+                if (oldItem.pCustomData != 0)
+                    Core.Memory.Free(oldItem.pCustomData);
                 SODestroyed(SteamID, oldItem);
             }
 
