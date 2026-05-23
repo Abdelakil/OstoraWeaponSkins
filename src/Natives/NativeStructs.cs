@@ -416,10 +416,13 @@ public class CCSPlayerInventory : INativeHandle
                 item.ItemID = GetNewItemID();
                 item.InventoryPosition = GetNewInventoryPosition();
 
+                if (oldItem.pCustomData != 0)
+                {
+                    Core.Memory.Free(oldItem.pCustomData);
+                    oldItem.pCustomData = 0;
+                }
                 if (existingId != GetDefaultWeaponSkinItemID(data.Team, data.DefinitionIndex))
                     SOCache.RemoveObject(oldItem);
-                if (oldItem.pCustomData != 0)
-                    Core.Memory.Free(oldItem.pCustomData);
                 SODestroyed(SteamID, oldItem);
 
                 UpdateLoadoutItem(data.Team, data.DefinitionIndex, item.ItemID);
@@ -448,10 +451,13 @@ public class CCSPlayerInventory : INativeHandle
 
             if (IsValidItemID(loadout.ItemId) && TryGetEconItemByItemID(loadout.ItemId, out var oldItem))
             {
+                if (oldItem.pCustomData != 0)
+                {
+                    Core.Memory.Free(oldItem.pCustomData);
+                    oldItem.pCustomData = 0;
+                }
                 if (loadout.ItemId != GetDefaultKnifeSkinItemID(data.Team))
                     SOCache.RemoveObject(oldItem);
-                if (oldItem.pCustomData != 0)
-                    Core.Memory.Free(oldItem.pCustomData);
                 SODestroyed(SteamID, oldItem);
             }
 
@@ -476,10 +482,13 @@ public class CCSPlayerInventory : INativeHandle
 
             if (IsValidItemID(loadout.ItemId) && TryGetEconItemByItemID(loadout.ItemId, out var oldItem))
             {
+                if (oldItem.pCustomData != 0)
+                {
+                    Core.Memory.Free(oldItem.pCustomData);
+                    oldItem.pCustomData = 0;
+                }
                 if (loadout.ItemId != GetDefaultGloveSkinItemID(data.Team))
                     SOCache.RemoveObject(oldItem);
-                if (oldItem.pCustomData != 0)
-                    Core.Memory.Free(oldItem.pCustomData);
                 SODestroyed(SteamID, oldItem);
             }
 
@@ -508,6 +517,11 @@ public class CCSPlayerInventory : INativeHandle
                 {
                     if (IsValidItemID(loadout.ItemId) && TryGetEconItemByItemID(loadout.ItemId, out var oldItem))
                     {
+                        if (oldItem.pCustomData != 0)
+                        {
+                            Core.Memory.Free(oldItem.pCustomData);
+                            oldItem.pCustomData = 0;
+                        }
                         if (loadout.ItemId != _defaultLoadouts[(Team)0, loadout_slot_t.LOADOUT_SLOT_MUSICKIT].ItemId)
                             SOCache.RemoveObject(oldItem);
                         SODestroyed(SteamID, oldItem);
