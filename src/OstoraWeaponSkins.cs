@@ -107,6 +107,7 @@ public class OstoraWeaponSkins : BasePlugin
             _loadEpochs.TryRemove(soid.SteamID, out _);
             _autoRefreshFlags.TryRemove(soid.SteamID, out _);
             _defaultModels.TryRemove(soid.SteamID, out _);
+            _skinCache.TryRemove(soid.SteamID, out _);
             DebugLog("[OSTORA] SOCache unsubscribed for {SteamID}", soid.SteamID);
         };
 
