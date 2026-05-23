@@ -81,7 +81,7 @@ public class CustomAttributeData : INativeHandle
     public void SetPaintkit(int paintkit) =>
         UpdateAttribute(new Attribute { AttributeDefinitionIndex = AttributeDefinitionIndex.SET_ITEM_TEXTURE_PREFAB, FloatData = Convert.ToSingle(paintkit) });
     public void SetPaintkitSeed(int seed) =>
-        UpdateAttribute(new Attribute { AttributeDefinitionIndex = AttributeDefinitionIndex.SET_ITEM_TEXTURE_SEED, IntData = seed });
+        UpdateAttribute(new Attribute { AttributeDefinitionIndex = AttributeDefinitionIndex.SET_ITEM_TEXTURE_SEED, FloatData = Convert.ToSingle(seed) });
     public void SetPaintkitWear(float wear) =>
         UpdateAttribute(new Attribute { AttributeDefinitionIndex = AttributeDefinitionIndex.SET_ITEM_TEXTURE_WEAR, FloatData = wear });
     public void SetStattrak(int count)
