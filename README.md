@@ -15,7 +15,8 @@ This project is fully based on [samyycX/WeaponSkins](https://github.com/samyycX/
 - **Stickers**: Apply up to 5 stickers per weapon with wear and rotation
 - **Keychains**: Add keychains to weapons
 - **StatTrak™**: StatTrak counter support
-- **Runtime Control**: Debug logging toggle via RCON command
+- **Runtime Control**: Debug logging toggle and diagnostics via RCON commands
+- **Performance**: Automatic cleanup of per-player skin data on disconnect; native memory freed on item destruction
 - **Database Support**: SQLite, MySQL, and PostgreSQL via FreeSql
 
 ## Installation
@@ -30,6 +31,7 @@ This project is fully based on [samyycX/WeaponSkins](https://github.com/samyycX/
 
 - `ws_refreshskins <steamid>` - Refresh skins for a specific player
 - `ws_debug <0|1>` - Toggle debug logging (0 = off, 1 = on)
+- `ws_status` - Print diagnostic info (cache sizes, memory usage)
 - `ws_wipeskins <steamid>` - Remove all custom skins for a player
 
 ## Database Schema
