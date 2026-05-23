@@ -292,6 +292,10 @@ public class OstoraWeaponSkins : BasePlugin
                 gloves  = gloves .Where(g => g.SteamID == steamId).ToList();
                 music   = music  .Where(m => m.SteamID == steamId).ToList();
 
+                // ── Level 1: NextWorldUpdate ──
+                // Execute DB-loaded data apply on the game thread.
+                // The async DB fetch above runs on a thread-pool thread; all CS2 API calls
+                // (inventory, loadout, weapon manipulation) must run on the game thread.
                 Core.Scheduler.NextWorldUpdate(() =>
                 {
                     if (!IsCurrentEpoch(steamId, epoch)) return;
@@ -333,9 +337,14 @@ public class OstoraWeaponSkins : BasePlugin
                     // Populate in-memory cache for synchronous lookup in OnGiveNamedItemPost
                     _skinCache[steamId] = (weapons, knives, gloves, music);
 
-                    // Apply visuals after inventory updates settle (2 ticks)
+                    // ── Level 2: NextWorldUpdate ──
+                    // Wait 1 tick for the inventory SO events (SOCreated/SOUpdated from the
+                    // Update*Skin calls above) to propagate before touching weapon entities.
                     Core.Scheduler.NextWorldUpdate(() =>
                     {
+                        // ── Level 3: NextWorldUpdate ──
+                        // Another tick for loadout state to stabilize after re-filtering for
+                        // team, so RegivePlayerWeaponsFromData sees the final loadout.
                         Core.Scheduler.NextWorldUpdate(() =>
                         {
                             if (!IsCurrentEpoch(steamId, epoch)) return;
@@ -365,7 +374,9 @@ public class OstoraWeaponSkins : BasePlugin
 
                             DebugLog("[OSTORA] Spawn load complete for {SteamID} (Team: {Team})", steamId, team2);
 
-                            // Auto-refresh after 0.5s to fix glove textures
+                            // ── DelayBySeconds(0.5) ──
+                            // Deferred glove texture fix: some glove models need extra time after
+                            // the agent model swap before SetBodygroup takes effect.
                             Core.Scheduler.DelayBySeconds(0.5f, () =>
                             {
                                 if (!IsCurrentEpoch(steamId, epoch)) return;
