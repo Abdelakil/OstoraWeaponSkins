@@ -1,0 +1,12 @@
+{
+  "OstoraWeaponSkins": {
+    "DatabaseConnection": "OstoraWeaponskins",
+    "SkinsLanguage": "en",
+    "CmdRefreshCooldownSeconds": 3,
+    "KnifeEnabled": true,
+    "SkinEnabled": true,
+    "GloveEnabled": true,
+    "AgentEnabled": true,
+    "MusicEnabled": true
+  }
+}

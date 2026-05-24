@@ -1,0 +1,8 @@
+{
+  "prefix": "[WeaponSkins] ",
+  "refresh_done": "Skins refreshed",
+  "refresh_all": "Refreshing skins for {0} players...",
+  "refresh_player": "Refreshing skins for {0}...",
+  "not_found": "Player with SteamID64 '{0}' not found.",
+  "usage": "Usage: ws_refreshskins <steamid64|all>"
+}
