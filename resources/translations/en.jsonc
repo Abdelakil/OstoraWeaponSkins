@@ -1,8 +1,13 @@
 {
-  "prefix": "[WeaponSkins] ",
-  "refresh_done": "Skins refreshed",
-  "refresh_all": "Refreshing skins for {0} players...",
-  "refresh_player": "Refreshing skins for {0}...",
-  "not_found": "Player with SteamID64 '{0}' not found.",
-  "usage": "Usage: ws_refreshskins <steamid64|all>"
+  "prefix": "[OSTORA] ",
+  "refresh_done": "Skins refreshed.",
+  "cooldown": "Command on cooldown.",
+  "website": "Visit the website to select your skins.",
+  "refresh_hint": "Use !wp to refresh your skins.",
+  "usage": "Usage: ws_refreshskins <steamid64|all>",
+  "no_players": "No players connected to refresh.",
+  "refreshing_count": "Refreshing skins for {0} players.",
+  "invalid_steamid": "Invalid SteamID64 format.",
+  "player_not_found": "Player with SteamID64 '{0}' not found.",
+  "refreshing_player": "Refreshing skins for {0}...",
 }

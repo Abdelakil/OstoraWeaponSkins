@@ -125,13 +125,26 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
 
     // Pre-built lookup: agent_index (extracted from image URL) → JObject agent entry
     internal static readonly Dictionary<int, JObject> AgentIndexLookup = [];
-
     internal static PluginConfig GetConfig() => _config;
 
     internal static void LogDebug(string message)
     {
         if (_config.DebugLogging)
             Console.WriteLine(message);
+    }
+
+    internal static string Localize(string key, params object[] args)
+    {
+        try
+        {
+            var prefix = Core.Localizer["prefix"];
+            var message = args.Length > 0 ? Core.Localizer[key, args] : Core.Localizer[key];
+            return prefix + message;
+        }
+        catch
+        {
+            return $"[OSTORA] {key}";
+        }
     }
 
     private static bool _gBCommandsAllowed = true;
@@ -390,7 +403,7 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
         if (CommandsCooldown.TryGetValue(player.Slot, out var cooldownEndTime) &&
             DateTime.UtcNow < cooldownEndTime)
         {
-            player.SendChat("[OstoraWeaponSkins] Command on cooldown.");
+            player.SendChat(Localize("cooldown"));
             return;
         }
 
@@ -407,7 +420,7 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
         GivePlayerAgent(player);
         GivePlayerMusicKit(player);
 
-        player.SendChat("[OstoraWeaponSkins] Skins refreshed.");
+        player.SendChat(Localize("refresh_done"));
     }
 
     private void OnCommandWS(ICommandContext context)
@@ -416,8 +429,8 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
         if (player == null || player.IsFakeClient || !_config.SkinEnabled)
             return;
 
-        player.SendChat("[OstoraWeaponSkins] Visit the website to select your skins.");
-        player.SendChat("[OstoraWeaponSkins] Use !wp to refresh your skins.");
+        player.SendChat(Localize("website"));
+        player.SendChat(Localize("refresh_hint"));
     }
 
     private void OnCommandSkinRefresh(ICommandContext context)
