@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Dapper;
 using MySqlConnector;
 using Newtonsoft.Json;
@@ -122,7 +123,16 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
     internal static List<JObject> AgentsList = [];
     internal static List<JObject> MusicList = [];
 
+    // Pre-built lookup: agent_index (extracted from image URL) → JObject agent entry
+    internal static readonly Dictionary<int, JObject> AgentIndexLookup = [];
+
     internal static PluginConfig GetConfig() => _config;
+
+    internal static void LogDebug(string message)
+    {
+        if (_config.DebugLogging)
+            Console.WriteLine(message);
+    }
 
     private static bool _gBCommandsAllowed = true;
     private static readonly Dictionary<int, DateTime> CommandsCooldown = new();
@@ -186,15 +196,15 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
         if (player.IsFakeClient || Database == null)
             return;
 
-        Console.WriteLine($"[OstoraWeaponSkins] Player connected: {player.Name} (SteamID: {player.SteamID})");
+        LogDebug($"[OstoraWeaponSkins] Player connected: {player.Name} (SteamID: {player.SteamID})");
 
         _ = Task.Run(async () =>
         {
             try
             {
-                Console.WriteLine($"[OstoraWeaponSkins] Loading player data from DB for {player.Name}...");
+                LogDebug($"[OstoraWeaponSkins] Loading player data from DB for {player.Name}...");
                 await Database.LoadPlayerData(player);
-                Console.WriteLine($"[OstoraWeaponSkins] Player data loaded for {player.Name}");
+                LogDebug($"[OstoraWeaponSkins] Player data loaded for {player.Name}");
             }
             catch (Exception ex)
             {
@@ -237,22 +247,22 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
     {
         if (!entity.DesignerName.Contains("weapon")) return;
 
-        Console.WriteLine($"[OstoraWeaponSkins] Entity spawned: {entity.DesignerName}");
+        LogDebug($"[OstoraWeaponSkins] Entity spawned: {entity.DesignerName}");
 
         Core.Scheduler.NextWorldUpdate(() =>
         {
             try
             {
-                Console.WriteLine($"[OstoraWeaponSkins] NextWorldUpdate: checking {entity.DesignerName}");
+                LogDebug($"[OstoraWeaponSkins] NextWorldUpdate: checking {entity.DesignerName}");
 
                 if (entity is not CBaseEntity baseEntity || !baseEntity.IsValid)
                 {
-                    Console.WriteLine($"[OstoraWeaponSkins] NextWorldUpdate: {entity.DesignerName} is not CBaseEntity or invalid");
+                    LogDebug($"[OstoraWeaponSkins] NextWorldUpdate: {entity.DesignerName} is not CBaseEntity or invalid");
                     return;
                 }
 
                 var ownerHandle = baseEntity.OwnerEntity;
-                Console.WriteLine($"[OstoraWeaponSkins] NextWorldUpdate: {entity.DesignerName} ownerHandle valid={ownerHandle.IsValid}");
+                LogDebug($"[OstoraWeaponSkins] NextWorldUpdate: {entity.DesignerName} ownerHandle valid={ownerHandle.IsValid}");
                 if (!ownerHandle.IsValid) return;
 
                 // OwnerEntity is the pawn, not the controller. Use GetPlayerFromPawn.
@@ -261,7 +271,7 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
                     var p = Core.PlayerManager.GetPlayerFromPawn(pawn);
                     if (p != null)
                     {
-                        Console.WriteLine($"[OstoraWeaponSkins] NextWorldUpdate: Applying skin to {p.Name}'s {entity.DesignerName}");
+                        LogDebug($"[OstoraWeaponSkins] NextWorldUpdate: Applying skin to {p.Name}'s {entity.DesignerName}");
                         GivePlayerWeaponSkin(p, entity);
                     }
                 }
@@ -279,7 +289,7 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
         if (player == null || player.IsFakeClient)
             return HookResult.Continue;
 
-        Console.WriteLine($"[OstoraWeaponSkins] Player spawned: {player.Name}, applying skins...");
+        LogDebug($"[OstoraWeaponSkins] Player spawned: {player.Name}, applying skins...");
 
         if (!_config.KnifeEnabled && !_config.GloveEnabled)
             return HookResult.Continue;
@@ -409,7 +419,7 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
 
     private void OnCommandSkinRefresh(ICommandContext context)
     {
-        Console.WriteLine($"[OstoraWeaponSkins] ws_refreshskins called with args: {string.Join(", ", context.Args)}");
+        LogDebug($"[OstoraWeaponSkins] ws_refreshskins called with args: {string.Join(", ", context.Args)}");
 
         if (context.IsSentByPlayer)
             return;
@@ -418,7 +428,7 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
 
         if (string.IsNullOrEmpty(args))
         {
-            Console.WriteLine("[OstoraWeaponSkins] Usage: ws_refreshskins <steamid64|all>");
+            LogDebug("[OstoraWeaponSkins] Usage: ws_refreshskins <steamid64|all>");
             return;
         }
 
@@ -432,17 +442,17 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
 
             if (targetPlayers.Count == 0)
             {
-                Console.WriteLine("[OstoraWeaponSkins] No players connected to refresh.");
+                LogDebug("[OstoraWeaponSkins] No players connected to refresh.");
                 return;
             }
 
-            Console.WriteLine($"[OstoraWeaponSkins] Refreshing skins for {targetPlayers.Count} players...");
+            LogDebug($"[OstoraWeaponSkins] Refreshing skins for {targetPlayers.Count} players...");
         }
         else
         {
             if (!ulong.TryParse(args, out var steamId))
             {
-                Console.WriteLine("[OstoraWeaponSkins] Invalid SteamID64 format.");
+                LogDebug("[OstoraWeaponSkins] Invalid SteamID64 format.");
                 return;
             }
 
@@ -451,43 +461,43 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
 
             if (found == null)
             {
-                Console.WriteLine($"[OstoraWeaponSkins] Player with SteamID64 '{args}' not found.");
+                LogDebug($"[OstoraWeaponSkins] Player with SteamID64 '{args}' not found.");
                 return;
             }
 
             targetPlayers.Add(found);
-            Console.WriteLine($"[OstoraWeaponSkins] Refreshing skins for {found.Name}...");
+            LogDebug($"[OstoraWeaponSkins] Refreshing skins for {found.Name}...");
         }
 
         foreach (var target in targetPlayers)
         {
             try
             {
-                Console.WriteLine($"[OstoraWeaponSkins] Loading player data from database for {target.Name}...");
+                LogDebug($"[OstoraWeaponSkins] Loading player data from database for {target.Name}...");
                 _ = Task.Run(async () =>
                 {
                     if (Database != null)
                         await Database.LoadPlayerData(target);
                 });
 
-                Console.WriteLine($"[OstoraWeaponSkins] Data loaded. Applying skins...");
-                Console.WriteLine($"[OstoraWeaponSkins] Applying gloves for {target.Name}...");
+                LogDebug($"[OstoraWeaponSkins] Data loaded. Applying skins...");
+                LogDebug($"[OstoraWeaponSkins] Applying gloves for {target.Name}...");
                 GivePlayerGloves(target);
-                Console.WriteLine($"[OstoraWeaponSkins] Applying weapons for {target.Name}...");
+                LogDebug($"[OstoraWeaponSkins] Applying weapons for {target.Name}...");
                 RefreshWeapons(target);
-                Console.WriteLine($"[OstoraWeaponSkins] Applying agents for {target.Name}...");
+                LogDebug($"[OstoraWeaponSkins] Applying agents for {target.Name}...");
                 GivePlayerAgent(target);
-                Console.WriteLine($"[OstoraWeaponSkins] Applying music for {target.Name}...");
+                LogDebug($"[OstoraWeaponSkins] Applying music for {target.Name}...");
                 GivePlayerMusicKit(target);
 
-                Console.WriteLine($"[OstoraWeaponSkins] Player {target.Name} slot={target.Slot}:");
-                Console.WriteLine($"[OstoraWeaponSkins]   Skins: {(GPlayerWeaponsInfo.TryGetValue(target.Slot, out var wi) ? wi.Count : 0)} team entries");
-                Console.WriteLine($"[OstoraWeaponSkins]   Knife: {(GPlayersKnife.TryGetValue(target.Slot, out var k) ? $"{k.Count} teams" : "none")}");
-                Console.WriteLine($"[OstoraWeaponSkins]   Gloves: {(GPlayersGlove.TryGetValue(target.Slot, out var g) ? $"{g.Count} teams" : "none")}");
-                Console.WriteLine($"[OstoraWeaponSkins]   Agents: {(GPlayersAgent.TryGetValue(target.Slot, out var a) ? $"CT={a.CT}, T={a.T}" : "none")}");
-                Console.WriteLine($"[OstoraWeaponSkins]   Music: {(GPlayersMusic.TryGetValue(target.Slot, out var m) ? $"{m.Count} teams" : "none")}");
+                LogDebug($"[OstoraWeaponSkins] Player {target.Name} slot={target.Slot}:");
+                LogDebug($"[OstoraWeaponSkins]   Skins: {(GPlayerWeaponsInfo.TryGetValue(target.Slot, out var wi) ? wi.Count : 0)} team entries");
+                LogDebug($"[OstoraWeaponSkins]   Knife: {(GPlayersKnife.TryGetValue(target.Slot, out var k) ? $"{k.Count} teams" : "none")}");
+                LogDebug($"[OstoraWeaponSkins]   Gloves: {(GPlayersGlove.TryGetValue(target.Slot, out var g) ? $"{g.Count} teams" : "none")}");
+                LogDebug($"[OstoraWeaponSkins]   Agents: {(GPlayersAgent.TryGetValue(target.Slot, out var a) ? $"CT={a.CT}, T={a.T}" : "none")}");
+                LogDebug($"[OstoraWeaponSkins]   Music: {(GPlayersMusic.TryGetValue(target.Slot, out var m) ? $"{m.Count} teams" : "none")}");
 
-                Console.WriteLine($"[OstoraWeaponSkins] Skins refreshed for {target.Name}");
+                LogDebug($"[OstoraWeaponSkins] Skins refreshed for {target.Name}");
             }
             catch (Exception ex)
             {
@@ -495,7 +505,7 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
             }
         }
 
-        Console.WriteLine("[OstoraWeaponSkins] Refresh process completed.");
+        LogDebug("[OstoraWeaponSkins] Refresh process completed.");
     }
 
     #region Database Synchronization
@@ -684,12 +694,12 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
 
     private void LoadDataFiles()
     {
-        Console.WriteLine($"[OstoraWeaponSkins] Loading data files from {Core.PluginPath}/data/...");
+        LogDebug($"[OstoraWeaponSkins] Loading data files from {Core.PluginPath}/data/...");
         LoadSkinsFromFile(Core.PluginPath + $"/data/skins_{_config.SkinsLanguage}.json");
         LoadGlovesFromFile(Core.PluginPath + $"/data/gloves_{_config.SkinsLanguage}.json");
         LoadAgentsFromFile(Core.PluginPath + $"/data/agents_{_config.SkinsLanguage}.json");
         LoadMusicFromFile(Core.PluginPath + $"/data/music_{_config.SkinsLanguage}.json");
-        Console.WriteLine($"[OstoraWeaponSkins] Loaded {SkinsList.Count} skins, {GlovesList.Count} gloves, {AgentsList.Count} agents, {MusicList.Count} music kits");
+        LogDebug($"[OstoraWeaponSkins] Loaded {SkinsList.Count} skins, {GlovesList.Count} gloves, {AgentsList.Count} agents, {MusicList.Count} music kits");
     }
 
     internal static PluginConfig LoadConfigFromFile(string filePath, string sectionName)
@@ -798,7 +808,7 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
         }
         catch (FileNotFoundException)
         {
-            Console.WriteLine($"[OstoraWeaponSkins] File not found: {filePath}");
+            LogDebug($"[OstoraWeaponSkins] File not found: {filePath}");
         }
     }
 
@@ -807,12 +817,11 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
         try
         {
             var json = File.ReadAllText(filePath);
-            var deserialized = JsonConvert.DeserializeObject<List<JObject>>(json);
-            GlovesList = deserialized ?? [];
+            GlovesList = JsonConvert.DeserializeObject<List<JObject>>(json) ?? [];
         }
         catch (FileNotFoundException)
         {
-            Console.WriteLine($"[OstoraWeaponSkins] File not found: {filePath}");
+            LogDebug($"[OstoraWeaponSkins] File not found: {filePath}");
         }
     }
 
@@ -821,12 +830,24 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
         try
         {
             var json = File.ReadAllText(filePath);
-            var deserialized = JsonConvert.DeserializeObject<List<JObject>>(json);
-            AgentsList = deserialized ?? [];
+            var agents = JsonConvert.DeserializeObject<List<JObject>>(json) ?? [];
+            AgentsList = agents;
+
+            // Build index from image URL: https://.../agent-4732.png
+            AgentIndexLookup.Clear();
+            foreach (var agent in agents)
+            {
+                var img = agent["image"]?.ToString();
+                if (string.IsNullOrEmpty(img)) continue;
+                var match = Regex.Match(img, @"agent-(\d+)\.png");
+                if (match.Success && int.TryParse(match.Groups[1].Value, out var idx))
+                    AgentIndexLookup[idx] = agent;
+            }
+            LogDebug($"[OstoraWeaponSkins] Agent index lookup built: {AgentIndexLookup.Count} entries");
         }
         catch (FileNotFoundException)
         {
-            Console.WriteLine($"[OstoraWeaponSkins] File not found: {filePath}");
+            LogDebug($"[OstoraWeaponSkins] File not found: {filePath}");
         }
     }
 
@@ -840,7 +861,7 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
         }
         catch (FileNotFoundException)
         {
-            Console.WriteLine($"[OstoraWeaponSkins] File not found: {filePath}");
+            LogDebug($"[OstoraWeaponSkins] File not found: {filePath}");
         }
     }
 

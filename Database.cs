@@ -35,10 +35,10 @@ internal sealed class Database
         try
         {
             var steamId = player.SteamID.ToString();
-            Console.WriteLine($"[OstoraWeaponSkins] DB: Loading data for SteamID={steamId}, connection={OstoraWeaponSkins.GetConfig().DatabaseConnection}");
+            OstoraWeaponSkins.LogDebug($"[OstoraWeaponSkins] DB: Loading data for SteamID={steamId}, connection={OstoraWeaponSkins.GetConfig().DatabaseConnection}");
 
             await using var connection = await GetConnectionAsync();
-            Console.WriteLine($"[OstoraWeaponSkins] DB: Connection opened. Server={connection.DataSource}, DB={connection.Database}");
+            OstoraWeaponSkins.LogDebug($"[OstoraWeaponSkins] DB: Connection opened. Server={connection.DataSource}, DB={connection.Database}");
 
             var config = OstoraWeaponSkins.GetConfig();
 
@@ -67,7 +67,7 @@ internal sealed class Database
 
             const string query = "SELECT `knife`, `weapon_team` FROM `wp_player_knife` WHERE `steamid` = @steamid ORDER BY `weapon_team` ASC";
             var rows = connection.Query<dynamic>(query, new { steamid = player.SteamID.ToString() });
-            Console.WriteLine($"[OstoraWeaponSkins] DB: GetKnife returned {rows.Count()} rows for steamid={player.SteamID}");
+            OstoraWeaponSkins.LogDebug($"[OstoraWeaponSkins] DB: GetKnife returned {rows.Count()} rows for steamid={player.SteamID}");
 
             foreach (var row in rows)
             {
@@ -107,7 +107,7 @@ internal sealed class Database
 
             const string query = "SELECT `weapon_defindex`, `weapon_team` FROM `wp_player_gloves` WHERE `steamid` = @steamid ORDER BY `weapon_team` ASC";
             var rows = connection.Query<dynamic>(query, new { steamid = player.SteamID.ToString() });
-            Console.WriteLine($"[OstoraWeaponSkins] DB: GetGlove returned {rows.Count()} rows");
+            OstoraWeaponSkins.LogDebug($"[OstoraWeaponSkins] DB: GetGlove returned {rows.Count()} rows");
 
             foreach (var row in rows)
             {
@@ -146,7 +146,7 @@ internal sealed class Database
 
             const string query = "SELECT `weapon_team`, `agent_index` FROM `wp_player_agents` WHERE `steamid` = @steamid";
             var rows = connection.Query<dynamic>(query, new { steamid = player.SteamID.ToString() });
-            Console.WriteLine($"[OstoraWeaponSkins] DB: GetAgent returned {rows.Count()} rows");
+            OstoraWeaponSkins.LogDebug($"[OstoraWeaponSkins] DB: GetAgent returned {rows.Count()} rows");
 
             string? agentCT = null;
             string? agentT = null;
@@ -154,15 +154,12 @@ internal sealed class Database
             foreach (var row in rows)
             {
                 int team = (int)row.weapon_team;
-                var agentIndex = row.agent_index?.ToString();
-                if (string.IsNullOrEmpty(agentIndex)) continue;
+                int agentIndex = (int)row.agent_index;
+                if (agentIndex == 0) continue;
 
-                var agent = OstoraWeaponSkins.AgentsList?.FirstOrDefault(a =>
-                {
-                    var img = a["image"]?.ToString() ?? "";
-                    var imgTeam = a["team"]?.ToObject<int>() ?? 0;
-                    return img.Contains($"agent-{agentIndex}.png") && imgTeam == team;
-                });
+                // O(1) lookup via pre-built index (built at load time from image URLs)
+                var agent = OstoraWeaponSkins.AgentIndexLookup.TryGetValue(agentIndex, out var entry)
+                    ? entry : null;
                 var model = agent?["model"]?.ToString();
                 if (model == "null") model = null;
 

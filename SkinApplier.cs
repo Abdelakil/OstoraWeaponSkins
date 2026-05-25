@@ -13,7 +13,7 @@ public sealed partial class OstoraWeaponSkins
         if (!_config.SkinEnabled) return;
         if (!GPlayerWeaponsInfo.TryGetValue(player.Slot, out _))
         {
-            Console.WriteLine($"[OstoraWeaponSkins] GivePlayerWeaponSkin: No skins for {player.Name} slot={player.Slot}");
+            LogDebug($"[OstoraWeaponSkins] GivePlayerWeaponSkin: No skins for {player.Name} slot={player.Slot}");
             return;
         }
 
@@ -25,12 +25,12 @@ public sealed partial class OstoraWeaponSkins
         // Only process weapons that have the econ entity hierarchy
         if (weaponEntity is not CEconEntity econWeapon || !econWeapon.IsValid)
         {
-            Console.WriteLine($"[OstoraWeaponSkins] GivePlayerWeaponSkin: Not CEconEntity: {weaponEntity.GetType().Name} ({weaponEntity.DesignerName})");
+            LogDebug($"[OstoraWeaponSkins] GivePlayerWeaponSkin: Not CEconEntity: {weaponEntity.GetType().Name} ({weaponEntity.DesignerName})");
             return;
         }
 
         var defIndex = econWeapon.AttributeManager?.Item?.ItemDefinitionIndex ?? 0;
-        Console.WriteLine($"[OstoraWeaponSkins] GivePlayerWeaponSkin: {player.Name} {weaponEntity.DesignerName} defindex={defIndex}");
+        LogDebug($"[OstoraWeaponSkins] GivePlayerWeaponSkin: {player.Name} {weaponEntity.DesignerName} defindex={defIndex}");
 
         var item = econWeapon.AttributeManager.Item;
 
@@ -76,11 +76,11 @@ public sealed partial class OstoraWeaponSkins
 
         if (!HasChangedPaint(player, weaponDefIndex, out var weaponInfo) || weaponInfo == null)
         {
-            Console.WriteLine($"[OstoraWeaponSkins] GivePlayerWeaponSkin: No paint for defindex={weaponDefIndex} team={team}");
+            LogDebug($"[OstoraWeaponSkins] GivePlayerWeaponSkin: No paint for defindex={weaponDefIndex} team={team}");
             return;
         }
 
-        Console.WriteLine($"[OstoraWeaponSkins] GivePlayerWeaponSkin: Applying paint={weaponInfo.Paint} seed={weaponInfo.Seed} to {weaponEntity.DesignerName}");
+        LogDebug($"[OstoraWeaponSkins] GivePlayerWeaponSkin: Applying paint={weaponInfo.Paint} seed={weaponInfo.Seed} to {weaponEntity.DesignerName}");
 
         item.AttributeList.Attributes.RemoveAll();
         item.NetworkedDynamicAttributes.Attributes.RemoveAll();
@@ -244,9 +244,9 @@ public sealed partial class OstoraWeaponSkins
                 {
                     foreach (var kvp in allTeams)
                         if (kvp.Value.TryGetValue(gloveId, out var twi))
-                            Console.WriteLine($"[OstoraWeaponSkins] Glove debug: team={kvp.Key} paint={twi.Paint} seed={twi.Seed}");
+                            LogDebug($"[OstoraWeaponSkins] Glove debug: team={kvp.Key} paint={twi.Paint} seed={twi.Seed}");
                 }
-                Console.WriteLine($"[OstoraWeaponSkins] Gloves applied: team={team} defindex={gloveId} paint={paint} seed={seed}");
+                LogDebug($"[OstoraWeaponSkins] Gloves applied: team={team} defindex={gloveId} paint={paint} seed={seed}");
             });
         }
         catch (Exception ex)
@@ -338,6 +338,10 @@ public sealed partial class OstoraWeaponSkins
         bool hasKnife = false;
         Dictionary<string, List<(int, int)>> weaponsWithAmmo = [];
 
+        // Track the player's active weapon so we can restore it after refresh
+        gear_slot_t? activeGearSlot = null;
+        string? activeWeaponName = null;
+
         foreach (var weaponHandle in weapons)
         {
             if (!weaponHandle.IsValid || weaponHandle.Value == null ||
@@ -368,6 +372,14 @@ public sealed partial class OstoraWeaponSkins
                     }
 
                     value.Add((clip1, reservedAmmo));
+
+                    // Record which weapon the player is currently holding
+                    if (pawn.WeaponServices?.ActiveWeapon.Value == weapon)
+                    {
+                        activeGearSlot = gearSlot;
+                        activeWeaponName = weaponByDefindex;
+                    }
+
                     weapon.AddEntityIOEvent<string?>("Kill", null, activator: null, caller: null, delay: 0.1f);
                 }
 
@@ -393,7 +405,6 @@ public sealed partial class OstoraWeaponSkins
             if (!PlayerHasKnife(player) && hasKnife)
             {
                 playerPawn.ItemServices?.GiveItem("weapon_knife");
-                playerPawn.ItemServices?.GiveItem("weapon_usp_silencer");
             }
 
             foreach (var entry in weaponsWithAmmo)
@@ -403,7 +414,7 @@ public sealed partial class OstoraWeaponSkins
                     var newWeapon = playerPawn.ItemServices?.GiveItem<CBasePlayerWeapon>(entry.Key);
                     if (newWeapon != null)
                     {
-                        Console.WriteLine($"[OstoraWeaponSkins] RefreshWeapons: gave {entry.Key}, applying skin directly...");
+                        LogDebug($"[OstoraWeaponSkins] RefreshWeapons: gave {entry.Key}, applying skin directly...");
                         GivePlayerWeaponSkin(player, newWeapon);
 
                         Core.Scheduler.NextTick(() =>
@@ -420,6 +431,20 @@ public sealed partial class OstoraWeaponSkins
                         });
                     }
                 }
+            }
+
+            // Restore the player's previously held weapon
+            if (activeWeaponName != null && player.IsAlive)
+            {
+                string? slotCmd = activeGearSlot switch
+                {
+                    gear_slot_t.GEAR_SLOT_RIFLE => "slot1",
+                    gear_slot_t.GEAR_SLOT_PISTOL => "slot2",
+                    gear_slot_t.GEAR_SLOT_KNIFE => "slot3",
+                    _ => null,
+                };
+                if (slotCmd != null)
+                    player.ExecuteCommand(slotCmd);
             }
         });
     }

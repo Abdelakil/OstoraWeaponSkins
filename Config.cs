@@ -10,4 +10,5 @@ public sealed class PluginConfig
 	public bool GloveEnabled { get; set; } = true;
 	public bool AgentEnabled { get; set; } = true;
 	public bool MusicEnabled { get; set; } = true;
+	public bool DebugLogging { get; set; } = false;
 }

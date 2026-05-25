@@ -95,7 +95,18 @@ Core.GameEvent.HookPost<EventPlayerSpawn>(OnPlayerSpawn);
 ```
 
 ### Agent JSON lookup
-`agents_en.json` has NO `weapon_defindex` field. Lookup by image URL: `img.Contains($"agent-{agentIndex}.png")` + `team` match.
+`agents_en.json` has NO `weapon_defindex` field. The numeric ID is embedded in the `image` URL (e.g., `agent-4732.png`).
+**Do NOT parse the image URL on every query.** Instead, build a lookup dictionary once at load time:
+```csharp
+// At load time:
+foreach (var agent in AgentsList) {
+    var match = Regex.Match(img, @"agent-(\d+)\.png");
+    if (match.Success) AgentIndexLookup[idx] = agent;
+}
+// At query time: O(1) lookup
+AgentIndexLookup.TryGetValue(agentIndex, out var agent);
+```
+CS# reference uses `agent_name` + `team` for menu selection, but server stores `agent_index`.
 
 ## Out of scope
 No chat menus, no web UI, no stattrak toggle, no write-back to DB, no skin images on screen.

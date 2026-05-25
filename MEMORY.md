@@ -45,6 +45,11 @@
 - **Fix:** `int weaponTeam = (int)row.weapon_team;` — explicit cast unboxes correctly regardless of underlying type. Then plain `if` check instead of switch.
 - **Other methods (GetKnife, GetGlove, GetMusic)** already had `(int)` cast before switch, so they were unaffected.
 
+### Round 10: Fragile agent lookup replaced with pre-built index
+- **Image URL parsing on every DB query was fragile** — `FirstOrDefault` + `string.Contains($"agent-{agentIndex}.png")` on every query. Also didn't filter by `team`, potentially matching wrong faction's agent.
+- **Fix:** `AgentIndexLookup` dictionary built once at load time from regex `agent-(\d+)\.png`. `GetAgentFromDatabase` now does O(1) `TryGetValue(agentIndex)`.
+- **CS# reference pattern:** matches by `agent_name` + `team` (menu selection). We can't use this directly because server DB stores `agent_index` not `agent_name`. The pre-built index bridges the gap.
+
 ## Key API Mappings (CS# → SwiftlyS2)
 
 ### Plugin base
