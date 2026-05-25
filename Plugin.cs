@@ -147,8 +147,11 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
     {
         Core = base.Core;
 
-        Core.Configuration.InitializeJsonWithModel<PluginConfig>(Core.PluginPath + "/resources/config.json", "OstoraWeaponSkins");
-        _config = LoadConfigFromFile(Core.PluginPath + "/resources/config.json", "OstoraWeaponSkins");
+        var configDir = Path.Combine(Core.PluginPath, "..", "..", "configs", "plugins", "OstoraWeaponSkins");
+        Directory.CreateDirectory(configDir);
+        var configPath = Path.Combine(configDir, "config.json");
+        Core.Configuration.InitializeJsonWithModel<PluginConfig>(configPath, "OstoraWeaponSkins");
+        _config = LoadConfigFromFile(configPath, "OstoraWeaponSkins");
 
         var connectionString = Core.Database.GetConnectionString(_config.DatabaseConnection);
         if (!string.IsNullOrEmpty(connectionString))

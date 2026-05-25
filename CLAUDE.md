@@ -8,7 +8,7 @@ The plugin class (`OstoraWeaponSkins`) is a `partial class` split across 3 files
 
 | File | Role |
 |------|------|
-| `Plugin.cs` | `BasePlugin` subclass. `[PluginMetadata]`, `Load()`, config, gamedata, command, game events, entity spawn hooks, player state dictionaries |
+| `Plugin.cs` | `BasePlugin` subclass. `[PluginMetadata]`, `Load()`, config (SwiftlyS2 standard `configs/plugins/OstoraWeaponSkins/config.json`), gamedata, command, game events, entity spawn hooks, player state dictionaries |
 | `SkinApplier.cs` | Partial of `OstoraWeaponSkins`. Game-level CS2 entity manipulation — weapon skins, gloves, knives, agents, music kits |
 | `Database.cs` | `Database` class wrapping `MySqlConnection`. Dapper queries against `wp_player_*` tables |
 | `Config.cs` | `PluginConfig` model — DB connection name, feature toggles |
