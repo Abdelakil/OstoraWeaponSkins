@@ -192,11 +192,11 @@ internal sealed class Database
                 int weaponTeam = (int)row.weapon_team;
                 if (weaponTeam != 2 && weaponTeam != 3) weaponTeam = 0;
 
-                string[]? keyChainParts = row.weapon_keychain?.ToString().Split(';');
+                string[]? keyChainParts = row.weapon_keychain?.ToString()?.Split(';');
 
                 var keyChainInfo = new KeyChainInfo();
 
-                if (keyChainParts!.Length == 5 &&
+                if (keyChainParts is { Length: 5 } &&
                     uint.TryParse(keyChainParts[0], out uint keyChainId) &&
                     float.TryParse(keyChainParts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float keyChainOffsetX) &&
                     float.TryParse(keyChainParts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float keyChainOffsetY) &&
@@ -224,9 +224,9 @@ internal sealed class Database
                 for (int i = 0; i <= 4; i++)
                 {
                     string stickerColumn = $"weapon_sticker_{i}";
-                    var stickerData = ((IDictionary<string, object>)row!)[stickerColumn];
+                    var stickerData = ((IDictionary<string, object>)row!).TryGetValue(stickerColumn, out var stickerVal) ? stickerVal : null;
 
-                    if (string.IsNullOrEmpty(stickerData.ToString())) continue;
+                    if (stickerData == null || string.IsNullOrEmpty(stickerData.ToString())) continue;
 
                     var parts = stickerData.ToString()!.Split(';');
 
