@@ -160,7 +160,7 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
     {
         Core = base.Core;
 
-        var configDir = Path.Combine(Core.PluginPath, "..", "..", "configs", "plugins", "OstoraWeaponSkins");
+        var configDir = Path.Combine(Core.PluginPath, "..", "..", "configs", "plugins", "ostoraweaponskins");
         Directory.CreateDirectory(configDir);
         var configPath = Path.Combine(configDir, "config.json");
         Core.Configuration.InitializeJsonWithModel<PluginConfig>(configPath, "OstoraWeaponSkins");

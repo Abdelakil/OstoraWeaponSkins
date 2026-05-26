@@ -12,7 +12,7 @@ Server console only. No `sw_` prefix (registered raw).
 
 ## Configuration
 
-Auto-generated on first load at `configs/plugins/OstoraWeaponSkins/config.json`:
+Auto-generated on first load at `configs/plugins/ostoraweaponskins/config.json`
 
 ```json
 {
