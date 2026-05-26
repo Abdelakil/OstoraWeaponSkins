@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Меню",
+    "menu.default_option": "Нет опций",
+    "menu.footer.move": "Переместить",
+    "menu.footer.use": "Использовать",
+    "menu.footer.exit": "Выход",
+    "menu.input.hint_template": "Пожалуйста, введите ваш ввод (макс. {0} символов)",
+    "menu.input.empty_value": "пусто",
+    "menu.input.waiting": "Ожидание",
+    "menu.input.cancel_hint": "нажмите снова, чтобы отменить",
+    "menu.input.invalid": "Неверный ввод",
+    "menu.input.accepted": "Принято",
+    "menu.choice.default_value": "По умолчанию",
+    "menu.selector.empty_value": "Пусто",
+    "menu.selector.claim_left": "Л",
+    "menu.selector.claim_right": "П",
+    "permission.command.denied": "У вас нет разрешения на использование этой команды."
+}

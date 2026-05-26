@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Meny",
+    "menu.default_option": "Ingen alternativer",
+    "menu.footer.move": "Flytt",
+    "menu.footer.use": "Bruk",
+    "menu.footer.exit": "Avslutt",
+    "menu.input.hint_template": "Vennligst skriv inn (maks {0} tegn)",
+    "menu.input.empty_value": "tom",
+    "menu.input.waiting": "Venter",
+    "menu.input.cancel_hint": "klikk igjen for å avbryte",
+    "menu.input.invalid": "Ugyldig inndata",
+    "menu.input.accepted": "Godtatt",
+    "menu.choice.default_value": "Standard",
+    "menu.selector.empty_value": "Tom",
+    "menu.selector.claim_left": "V",
+    "menu.selector.claim_right": "H",
+    "permission.command.denied": "Du har ikke tillatelse til å bruke denne kommandoen."
+}

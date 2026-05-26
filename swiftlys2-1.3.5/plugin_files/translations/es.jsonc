@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Menú",
+    "menu.default_option": "Sin opciones",
+    "menu.footer.move": "Mover",
+    "menu.footer.use": "Usar",
+    "menu.footer.exit": "Salir",
+    "menu.input.hint_template": "Por favor, escriba su entrada (máx {0} caracteres)",
+    "menu.input.empty_value": "vacío",
+    "menu.input.waiting": "Esperando",
+    "menu.input.cancel_hint": "haga clic nuevamente para cancelar",
+    "menu.input.invalid": "Entrada inválida",
+    "menu.input.accepted": "Aceptado",
+    "menu.choice.default_value": "Predeterminado",
+    "menu.selector.empty_value": "Vacío",
+    "menu.selector.claim_left": "I",
+    "menu.selector.claim_right": "D",
+    "permission.command.denied": "No tiene permiso para usar este comando."
+}

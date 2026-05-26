@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "เมนู",
+    "menu.default_option": "ไม่มีตัวเลือก",
+    "menu.footer.move": "ย้าย",
+    "menu.footer.use": "ใช้",
+    "menu.footer.exit": "ออก",
+    "menu.input.hint_template": "โปรดพิมพ์อินพุต (สูงสุด {0} อักขระ)",
+    "menu.input.empty_value": "ว่าง",
+    "menu.input.waiting": "รอ",
+    "menu.input.cancel_hint": "คลิกอีกครั้งเพื่อยกเลิก",
+    "menu.input.invalid": "อินพุตไม่ถูกต้อง",
+    "menu.input.accepted": "ยอมรับ",
+    "menu.choice.default_value": "ค่าเริ่มต้น",
+    "menu.selector.empty_value": "ว่าง",
+    "menu.selector.claim_left": "ซ้าย",
+    "menu.selector.claim_right": "ขวา",
+    "permission.command.denied": "คุณไม่มีสิทธิ์ใช้คำสั่งนี้"
+}

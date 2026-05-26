@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Menu",
+    "menu.default_option": "Aucune option",
+    "menu.footer.move": "Déplacer",
+    "menu.footer.use": "Utiliser",
+    "menu.footer.exit": "Quitter",
+    "menu.input.hint_template": "Veuillez saisir votre entrée (max {0} caractères)",
+    "menu.input.empty_value": "vide",
+    "menu.input.waiting": "Attente",
+    "menu.input.cancel_hint": "cliquez à nouveau pour annuler",
+    "menu.input.invalid": "Entrée invalide",
+    "menu.input.accepted": "Accepté",
+    "menu.choice.default_value": "Par défaut",
+    "menu.selector.empty_value": "Vide",
+    "menu.selector.claim_left": "G",
+    "menu.selector.claim_right": "D",
+    "permission.command.denied": "Vous n'avez pas la permission d'utiliser cette commande."
+}

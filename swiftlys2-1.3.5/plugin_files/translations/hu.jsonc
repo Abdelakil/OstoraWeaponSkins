@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Menü",
+    "menu.default_option": "Nincsenek opciók",
+    "menu.footer.move": "Mozgatás",
+    "menu.footer.use": "Használat",
+    "menu.footer.exit": "Kilépés",
+    "menu.input.hint_template": "Kérjük, írja be az adatokat (max {0} karakter)",
+    "menu.input.empty_value": "üres",
+    "menu.input.waiting": "Várakozás",
+    "menu.input.cancel_hint": "kattintson újra a mégse gombra",
+    "menu.input.invalid": "Érvénytelen bevitel",
+    "menu.input.accepted": "Elfogadva",
+    "menu.choice.default_value": "Alapértelmezett",
+    "menu.selector.empty_value": "Üres",
+    "menu.selector.claim_left": "B",
+    "menu.selector.claim_right": "J",
+    "permission.command.denied": "Nincs engedélye az parancs használatához."
+}

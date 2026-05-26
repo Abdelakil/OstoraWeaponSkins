@@ -1,0 +1,18 @@
+{
+  "menu.default_title": "Menu",
+  "menu.default_option": "No options",
+  "menu.footer.move": "Move",
+  "menu.footer.use": "Use",
+  "menu.footer.exit": "Exit",
+  "menu.input.hint_template": "Please type your input (max {0} characters)",
+  "menu.input.empty_value": "empty",
+  "menu.input.waiting": "Waiting",
+  "menu.input.cancel_hint": "click again to cancel",
+  "menu.input.invalid": "Invalid input",
+  "menu.input.accepted": "Accepted",
+  "menu.choice.default_value": "Default",
+  "menu.selector.empty_value": "Empty",
+  "menu.selector.claim_left": "L",
+  "menu.selector.claim_right": "R",
+  "permission.command.denied": "You do not have permission to use this command."
+}

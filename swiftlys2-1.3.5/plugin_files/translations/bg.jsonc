@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Меню",
+    "menu.default_option": "Няма опции",
+    "menu.footer.move": "Преместване",
+    "menu.footer.use": "Използване",
+    "menu.footer.exit": "Изход",
+    "menu.input.hint_template": "Введете вашия вход (максимум {0} знака)",
+    "menu.input.empty_value": "празно",
+    "menu.input.waiting": "Чакане",
+    "menu.input.cancel_hint": "кликнете отново, за да отмените",
+    "menu.input.invalid": "Невалиден вход",
+    "menu.input.accepted": "Приемам",
+    "menu.choice.default_value": "По подразбиране",
+    "menu.selector.empty_value": "Празно",
+    "menu.selector.claim_left": "Л",
+    "menu.selector.claim_right": "Д",
+    "permission.command.denied": "Нямате разрешение да използвате тази команда."
+}

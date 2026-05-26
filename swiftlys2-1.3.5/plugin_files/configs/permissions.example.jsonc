@@ -1,0 +1,22 @@
+{
+  "Permissions": {
+    "Players": {
+      "7656": [
+        "vip2"
+      ]
+    },
+    "PermissionGroups": {
+      "__default": [
+        "test.1",
+        "test.2"
+      ],
+      "vip": [
+        "test.3"
+      ],
+      "vip2": [
+        "vip",
+        "test.*"
+      ]
+    }
+  }
+}

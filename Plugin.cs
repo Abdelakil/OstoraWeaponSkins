@@ -166,11 +166,7 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
         Core.Configuration.InitializeJsonWithModel<PluginConfig>(configPath, "OstoraWeaponSkins");
         _config = LoadConfigFromFile(configPath, "OstoraWeaponSkins");
 
-        var connectionString = Core.Database.GetConnectionString(_config.DatabaseConnection);
-        if (!string.IsNullOrEmpty(connectionString))
-        {
-            Database = new Database(connectionString);
-        }
+        Database = new Database(_config.DatabaseConnection);
 
         LoadDataFiles();
         _ = CheckDatabaseTables();

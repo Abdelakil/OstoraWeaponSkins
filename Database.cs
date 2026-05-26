@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Globalization;
-using System.Text.RegularExpressions;
 using Dapper;
 using MySqlConnector;
 using SwiftlyS2.Shared.Players;
@@ -10,21 +9,20 @@ namespace OstoraWeaponSkins;
 
 internal sealed class Database
 {
-    private readonly string _connectionString;
+    private readonly string _connectionName;
 
-    public Database(string connectionString)
+    public Database(string connectionName)
     {
-        // Strip keys MySqlConnector doesn't recognize (e.g. "timeout" from SwiftlyS2's database.jsonc)
-        var clean = System.Text.RegularExpressions.Regex.Replace(
-            connectionString, @"timeout=[^;]*;?", "", RegexOptions.IgnoreCase);
-        var builder = new MySqlConnectionStringBuilder(clean);
-        _connectionString = builder.ConnectionString;
+        _connectionName = connectionName;
     }
 
-    public async Task<MySqlConnection> GetConnectionAsync()
+    internal async Task<MySqlConnection> GetConnectionAsync()
     {
-        var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        // SwiftlyS2 handles the connection creation — no manual connection string parsing needed
+        var connection = OstoraWeaponSkins.Core.Database.GetConnection(_connectionName) as MySqlConnection
+            ?? throw new InvalidOperationException($"Connection '{_connectionName}' is not a MySQL connection");
+        if (connection.State != ConnectionState.Open)
+            await connection.OpenAsync();
         return connection;
     }
 
@@ -35,7 +33,7 @@ internal sealed class Database
         try
         {
             var steamId = player.SteamID.ToString();
-            OstoraWeaponSkins.LogDebug($"[OstoraWeaponSkins] DB: Loading data for SteamID={steamId}, connection={OstoraWeaponSkins.GetConfig().DatabaseConnection}");
+            OstoraWeaponSkins.LogDebug($"[OstoraWeaponSkins] DB: Loading data for SteamID={steamId}, connection={_connectionName}");
 
             await using var connection = await GetConnectionAsync();
             OstoraWeaponSkins.LogDebug($"[OstoraWeaponSkins] DB: Connection opened. Server={connection.DataSource}, DB={connection.Database}");
@@ -73,12 +71,8 @@ internal sealed class Database
             {
                 if (string.IsNullOrEmpty(row.knife)) continue;
 
-                int weaponTeam = (int)row.weapon_team switch
-                {
-                    2 => 2,
-                    3 => 3,
-                    _ => 0,
-                };
+                int weaponTeam = (int)row.weapon_team;
+                if (weaponTeam != 2 && weaponTeam != 3) weaponTeam = 0;
 
                 var playerKnives = OstoraWeaponSkins.GPlayersKnife.GetOrAdd(player.Slot, _ => new ConcurrentDictionary<int, string>());
 
@@ -114,12 +108,8 @@ internal sealed class Database
                 if (row.weapon_defindex == null) continue;
 
                 var playerGloves = OstoraWeaponSkins.GPlayersGlove.GetOrAdd(player.Slot, _ => new ConcurrentDictionary<int, ushort>());
-                int weaponTeam = (int)row.weapon_team switch
-                {
-                    2 => 2,
-                    3 => 3,
-                    _ => 0,
-                };
+                int weaponTeam = (int)row.weapon_team;
+                if (weaponTeam != 2 && weaponTeam != 3) weaponTeam = 0;
 
                 if (weaponTeam == 0)
                 {
@@ -157,7 +147,6 @@ internal sealed class Database
                 int agentIndex = (int)row.agent_index;
                 if (agentIndex == 0) continue;
 
-                // O(1) lookup via pre-built index (built at load time from image URLs)
                 var agent = OstoraWeaponSkins.AgentIndexLookup.TryGetValue(agentIndex, out var entry)
                     ? entry : null;
                 var model = agent?["model"]?.ToString();
@@ -295,12 +284,8 @@ internal sealed class Database
             {
                 if (row.music_id == null) continue;
 
-                int weaponTeam = (int)row.weapon_team switch
-                {
-                    2 => 2,
-                    3 => 3,
-                    _ => 0,
-                };
+                int weaponTeam = (int)row.weapon_team;
+                if (weaponTeam != 2 && weaponTeam != 3) weaponTeam = 0;
 
                 var playerMusic = OstoraWeaponSkins.GPlayersMusic.GetOrAdd(player.Slot, _ => new ConcurrentDictionary<int, ushort>());
 

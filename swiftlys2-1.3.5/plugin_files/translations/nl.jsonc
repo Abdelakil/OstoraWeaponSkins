@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Menu",
+    "menu.default_option": "Geen opties",
+    "menu.footer.move": "Verplaatsen",
+    "menu.footer.use": "Gebruiken",
+    "menu.footer.exit": "Afsluiten",
+    "menu.input.hint_template": "Voer uw invoer in (max {0} tekens)",
+    "menu.input.empty_value": "leeg",
+    "menu.input.waiting": "Wachten",
+    "menu.input.cancel_hint": "klik opnieuw om te annuleren",
+    "menu.input.invalid": "Ongeldige invoer",
+    "menu.input.accepted": "Geaccepteerd",
+    "menu.choice.default_value": "Standaard",
+    "menu.selector.empty_value": "Leeg",
+    "menu.selector.claim_left": "L",
+    "menu.selector.claim_right": "R",
+    "permission.command.denied": "U hebt geen toestemming om deze opdracht te gebruiken."
+}

@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Menu",
+    "menu.default_option": "Không có tùy chọn",
+    "menu.footer.move": "Di chuyển",
+    "menu.footer.use": "Sử dụng",
+    "menu.footer.exit": "Thoát",
+    "menu.input.hint_template": "Vui lòng nhập thông tin (tối đa {0} ký tự)",
+    "menu.input.empty_value": "trống",
+    "menu.input.waiting": "Chờ đợi",
+    "menu.input.cancel_hint": "nhấp lại để hủy",
+    "menu.input.invalid": "Đầu vào không hợp lệ",
+    "menu.input.accepted": "Đã chấp nhận",
+    "menu.choice.default_value": "Mặc định",
+    "menu.selector.empty_value": "Trống",
+    "menu.selector.claim_left": "T",
+    "menu.selector.claim_right": "P",
+    "permission.command.denied": "Bạn không có quyền sử dụng lệnh này."
+}

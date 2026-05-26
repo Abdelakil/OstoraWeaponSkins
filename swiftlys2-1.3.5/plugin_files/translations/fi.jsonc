@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Valikko",
+    "menu.default_option": "Ei vaihtoehtoja",
+    "menu.footer.move": "Siirrä",
+    "menu.footer.use": "Käytä",
+    "menu.footer.exit": "Poistu",
+    "menu.input.hint_template": "Kirjoita syötteesi (enint. {0} merkkiä)",
+    "menu.input.empty_value": "tyhjä",
+    "menu.input.waiting": "Odotetaan",
+    "menu.input.cancel_hint": "klikkaa uudelleen peruuttaaksesi",
+    "menu.input.invalid": "Virheellinen syöte",
+    "menu.input.accepted": "Hyväksytty",
+    "menu.choice.default_value": "Oletusarvo",
+    "menu.selector.empty_value": "Tyhjä",
+    "menu.selector.claim_left": "V",
+    "menu.selector.claim_right": "O",
+    "permission.command.denied": "Sinulla ei ole oikeutta käyttää tätä komentoa."
+}

@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Menu",
+    "menu.default_option": "Brak opcji",
+    "menu.footer.move": "Przesuń",
+    "menu.footer.use": "Użyj",
+    "menu.footer.exit": "Wyjście",
+    "menu.input.hint_template": "Wpisz swoją wiadomość (max {0} znaków)",
+    "menu.input.empty_value": "puste",
+    "menu.input.waiting": "Oczekiwanie",
+    "menu.input.cancel_hint": "kliknij ponownie, aby anulować",
+    "menu.input.invalid": "Nieprawidłowe dane wejściowe",
+    "menu.input.accepted": "Zaakceptowano",
+    "menu.choice.default_value": "Domyślne",
+    "menu.selector.empty_value": "Puste",
+    "menu.selector.claim_left": "L",
+    "menu.selector.claim_right": "P",
+    "permission.command.denied": "Nie masz uprawnień do korzystania z tego polecenia."
+}

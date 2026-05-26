@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Menü",
+    "menu.default_option": "Keine Optionen",
+    "menu.footer.move": "Verschieben",
+    "menu.footer.use": "Verwenden",
+    "menu.footer.exit": "Beenden",
+    "menu.input.hint_template": "Bitte geben Sie Ihre Eingabe ein (max {0} Zeichen)",
+    "menu.input.empty_value": "leer",
+    "menu.input.waiting": "Warten",
+    "menu.input.cancel_hint": "klicken Sie erneut zum Abbrechen",
+    "menu.input.invalid": "Ungültige Eingabe",
+    "menu.input.accepted": "Akzeptiert",
+    "menu.choice.default_value": "Standard",
+    "menu.selector.empty_value": "Leer",
+    "menu.selector.claim_left": "L",
+    "menu.selector.claim_right": "R",
+    "permission.command.denied": "Sie haben keine Berechtigung, diesen Befehl zu verwenden."
+}

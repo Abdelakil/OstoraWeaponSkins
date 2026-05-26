@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Meniu",
+    "menu.default_option": "Fără opțiuni",
+    "menu.footer.move": "Mutare",
+    "menu.footer.use": "Utilizare",
+    "menu.footer.exit": "Ieșire",
+    "menu.input.hint_template": "Vă rugăm să introduceti (max {0} caractere)",
+    "menu.input.empty_value": "gol",
+    "menu.input.waiting": "Se așteaptă",
+    "menu.input.cancel_hint": "faceți clic din nou pentru a anula",
+    "menu.input.invalid": "Intrare nevalidă",
+    "menu.input.accepted": "Acceptat",
+    "menu.choice.default_value": "Implicit",
+    "menu.selector.empty_value": "Gol",
+    "menu.selector.claim_left": "S",
+    "menu.selector.claim_right": "D",
+    "permission.command.denied": "Nu aveți permisiune să utilizați această comandă."
+}

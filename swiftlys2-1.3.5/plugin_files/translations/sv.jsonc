@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Meny",
+    "menu.default_option": "Inga alternativ",
+    "menu.footer.move": "Flytta",
+    "menu.footer.use": "Använd",
+    "menu.footer.exit": "Avsluta",
+    "menu.input.hint_template": "Vänligen skriv din inmatning (max {0} tecken)",
+    "menu.input.empty_value": "tom",
+    "menu.input.waiting": "Väntar",
+    "menu.input.cancel_hint": "klicka igen för att avbryta",
+    "menu.input.invalid": "Ogiltig inmatning",
+    "menu.input.accepted": "Accepterad",
+    "menu.choice.default_value": "Standard",
+    "menu.selector.empty_value": "Tom",
+    "menu.selector.claim_left": "V",
+    "menu.selector.claim_right": "H",
+    "permission.command.denied": "Du har inte behörighet att använda detta kommando."
+}

@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "菜单",
+    "menu.default_option": "无选项",
+    "menu.footer.move": "移动",
+    "menu.footer.use": "使用",
+    "menu.footer.exit": "退出",
+    "menu.input.hint_template": "请输入内容（最多{0}个字符）",
+    "menu.input.empty_value": "空",
+    "menu.input.waiting": "等待中",
+    "menu.input.cancel_hint": "再次点击以取消",
+    "menu.input.invalid": "输入无效",
+    "menu.input.accepted": "已接受",
+    "menu.choice.default_value": "默认",
+    "menu.selector.empty_value": "空",
+    "menu.selector.claim_left": "左",
+    "menu.selector.claim_right": "右",
+    "permission.command.denied": "您没有权限使用此命令。"
+}

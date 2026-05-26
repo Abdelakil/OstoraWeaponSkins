@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Menü",
+    "menu.default_option": "Seçenek yok",
+    "menu.footer.move": "Taşı",
+    "menu.footer.use": "Kullan",
+    "menu.footer.exit": "Çık",
+    "menu.input.hint_template": "Lütfen giriş yazınız (maks {0} karakter)",
+    "menu.input.empty_value": "boş",
+    "menu.input.waiting": "Beklemede",
+    "menu.input.cancel_hint": "iptal etmek için tekrar tıklayın",
+    "menu.input.invalid": "Geçersiz giriş",
+    "menu.input.accepted": "Kabul edildi",
+    "menu.choice.default_value": "Varsayılan",
+    "menu.selector.empty_value": "Boş",
+    "menu.selector.claim_left": "S",
+    "menu.selector.claim_right": "D",
+    "permission.command.denied": "Bu komutu kullanmak için yetkiniz yok."
+}

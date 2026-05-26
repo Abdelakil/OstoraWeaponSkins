@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Меню",
+    "menu.default_option": "Немає опцій",
+    "menu.footer.move": "Перемістити",
+    "menu.footer.use": "Використовувати",
+    "menu.footer.exit": "Вихід",
+    "menu.input.hint_template": "Будь ласка, введіть ваше введення (макс {0} символів)",
+    "menu.input.empty_value": "порожньо",
+    "menu.input.waiting": "Очікування",
+    "menu.input.cancel_hint": "натисніть ще раз для скасування",
+    "menu.input.invalid": "Невірне введення",
+    "menu.input.accepted": "Прийнято",
+    "menu.choice.default_value": "За замовчуванням",
+    "menu.selector.empty_value": "Порожньо",
+    "menu.selector.claim_left": "Л",
+    "menu.selector.claim_right": "П",
+    "permission.command.denied": "У вас немає дозволу використовувати цю команду."
+}

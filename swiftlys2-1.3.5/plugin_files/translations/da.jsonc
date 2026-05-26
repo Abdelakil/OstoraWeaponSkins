@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Menu",
+    "menu.default_option": "Ingen muligheder",
+    "menu.footer.move": "Flyt",
+    "menu.footer.use": "Brug",
+    "menu.footer.exit": "Afslut",
+    "menu.input.hint_template": "Skriv venligst dit input (maks {0} tegn)",
+    "menu.input.empty_value": "tom",
+    "menu.input.waiting": "Venter",
+    "menu.input.cancel_hint": "klik igen for at annullere",
+    "menu.input.invalid": "Ugyldigt input",
+    "menu.input.accepted": "Accepteret",
+    "menu.choice.default_value": "Standard",
+    "menu.selector.empty_value": "Tom",
+    "menu.selector.claim_left": "V",
+    "menu.selector.claim_right": "H",
+    "permission.command.denied": "Du har ikke tilladelse til at bruge denne kommando."
+}

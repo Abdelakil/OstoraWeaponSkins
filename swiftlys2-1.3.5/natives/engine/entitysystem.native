@@ -1,0 +1,11 @@
+class EntitySystem
+
+sync void Spawn = ptr entity, ptr keyvalues
+sync void Despawn = ptr entity
+ptr CreateEntityByName = string name
+sync void AcceptInput = ptr entity, string input, ptr activator, ptr caller, ptr value, int32 outputID
+sync void AddEntityIOEvent = ptr entity, string input, ptr activator, ptr caller, ptr value, float delay
+ptr GetEntitySystem = void
+uint64 HookEntityOutput = string className, string outputName, ptr callback // CEntityIOOutput*, string outputName, CEntityInstance* activator, CEntityInstance* caller, float delay -> int (HookResult)
+void UnhookEntityOutput = uint64 hookid
+bool IsValid = void

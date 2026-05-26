@@ -1,0 +1,9 @@
+class ConsoleOutput
+
+uint64 AddConsoleListener = ptr callback // callback should receive: string message
+void RemoveConsoleListener = uint64 listenerId
+bool IsEnabled = void // returns whether console filtering is enabled
+void ToggleFilter = void // toggles the console filter on/off
+void ReloadFilterConfiguration = void // reloads the filter configuration from file
+bool NeedsFiltering = string text // checks if a message needs filtering
+string GetCounterText = void // gets the counter text showing how many messages were filtered

@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Menu",
+    "menu.default_option": "Tidak ada opsi",
+    "menu.footer.move": "Pindahkan",
+    "menu.footer.use": "Gunakan",
+    "menu.footer.exit": "Keluar",
+    "menu.input.hint_template": "Silakan ketik masukan Anda (maks {0} karakter)",
+    "menu.input.empty_value": "kosong",
+    "menu.input.waiting": "Menunggu",
+    "menu.input.cancel_hint": "klik lagi untuk membatalkan",
+    "menu.input.invalid": "Input tidak valid",
+    "menu.input.accepted": "Diterima",
+    "menu.choice.default_value": "Bawaan",
+    "menu.selector.empty_value": "Kosong",
+    "menu.selector.claim_left": "K",
+    "menu.selector.claim_right": "N",
+    "permission.command.denied": "Anda tidak memiliki izin untuk menggunakan perintah ini."
+}

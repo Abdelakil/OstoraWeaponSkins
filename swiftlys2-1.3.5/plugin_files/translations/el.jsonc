@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Μενού",
+    "menu.default_option": "Χωρίς επιλογές",
+    "menu.footer.move": "Μετακίνηση",
+    "menu.footer.use": "Χρήση",
+    "menu.footer.exit": "Έξοδος",
+    "menu.input.hint_template": "Παρακαλώ πληκτρολογήστε την είσοδό σας (μέγ. {0} χαρακτήρες)",
+    "menu.input.empty_value": "κενό",
+    "menu.input.waiting": "Αναμονή",
+    "menu.input.cancel_hint": "κάντε κλικ ξανά για ακύρωση",
+    "menu.input.invalid": "Μη έγκυρη είσοδος",
+    "menu.input.accepted": "Αποδεκτό",
+    "menu.choice.default_value": "Προεπιλογή",
+    "menu.selector.empty_value": "Κενό",
+    "menu.selector.claim_left": "Α",
+    "menu.selector.claim_right": "Δ",
+    "permission.command.denied": "Δεν έχετε άδεια χρήσης αυτής της εντολής."
+}

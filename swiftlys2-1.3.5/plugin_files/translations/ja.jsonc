@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "メニュー",
+    "menu.default_option": "オプションなし",
+    "menu.footer.move": "移動",
+    "menu.footer.use": "使用",
+    "menu.footer.exit": "終了",
+    "menu.input.hint_template": "入力してください（最大{0}文字）",
+    "menu.input.empty_value": "空",
+    "menu.input.waiting": "待機中",
+    "menu.input.cancel_hint": "もう一度クリックしてキャンセル",
+    "menu.input.invalid": "無効な入力",
+    "menu.input.accepted": "承認済み",
+    "menu.choice.default_value": "デフォルト",
+    "menu.selector.empty_value": "空",
+    "menu.selector.claim_left": "左",
+    "menu.selector.claim_right": "右",
+    "permission.command.denied": "このコマンドを使用する権限がありません。"
+}

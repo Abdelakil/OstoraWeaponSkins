@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "Nabídka",
+    "menu.default_option": "Žádné možnosti",
+    "menu.footer.move": "Přesunout",
+    "menu.footer.use": "Použít",
+    "menu.footer.exit": "Ukončit",
+    "menu.input.hint_template": "Zadejte svůj vstup (max {0} znaků)",
+    "menu.input.empty_value": "prázdné",
+    "menu.input.waiting": "Čekání",
+    "menu.input.cancel_hint": "klikněte znovu pro zrušení",
+    "menu.input.invalid": "Neplatný vstup",
+    "menu.input.accepted": "Přijato",
+    "menu.choice.default_value": "Výchozí",
+    "menu.selector.empty_value": "Prázdné",
+    "menu.selector.claim_left": "L",
+    "menu.selector.claim_right": "P",
+    "permission.command.denied": "Nemáte oprávnění k používání tohoto příkazu."
+}

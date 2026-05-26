@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "القائمة",
+    "menu.default_option": "لا توجد خيارات",
+    "menu.footer.move": "تحريك",
+    "menu.footer.use": "استخدام",
+    "menu.footer.exit": "خروج",
+    "menu.input.hint_template": "يرجى إدخال البيانات (الحد الأقصى {0} حرف)",
+    "menu.input.empty_value": "فارغ",
+    "menu.input.waiting": "انتظار",
+    "menu.input.cancel_hint": "انقر مرة أخرى للإلغاء",
+    "menu.input.invalid": "إدخال غير صحيح",
+    "menu.input.accepted": "تم القبول",
+    "menu.choice.default_value": "الافتراضي",
+    "menu.selector.empty_value": "فارغ",
+    "menu.selector.claim_left": "ي",
+    "menu.selector.claim_right": "ي",
+    "permission.command.denied": "ليس لديك الإذن باستخدام هذا الأمر."
+}

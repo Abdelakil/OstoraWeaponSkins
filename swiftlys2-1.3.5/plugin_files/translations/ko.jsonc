@@ -1,0 +1,18 @@
+{
+    "menu.default_title": "메뉴",
+    "menu.default_option": "옵션 없음",
+    "menu.footer.move": "이동",
+    "menu.footer.use": "사용",
+    "menu.footer.exit": "종료",
+    "menu.input.hint_template": "입력해주세요 (최대 {0}자)",
+    "menu.input.empty_value": "빈 상태",
+    "menu.input.waiting": "대기 중",
+    "menu.input.cancel_hint": "다시 클릭하여 취소",
+    "menu.input.invalid": "유효하지 않은 입력",
+    "menu.input.accepted": "수락됨",
+    "menu.choice.default_value": "기본값",
+    "menu.selector.empty_value": "빈 상태",
+    "menu.selector.claim_left": "좌",
+    "menu.selector.claim_right": "우",
+    "permission.command.denied": "이 명령을 사용할 권한이 없습니다."
+}

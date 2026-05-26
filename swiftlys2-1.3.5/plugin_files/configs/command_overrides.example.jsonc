@@ -1,0 +1,7 @@
+{
+  "CommandOverrides": {
+    "Permissions": {
+      "sw_abc": "test.permission"
+    }
+  }
+}
