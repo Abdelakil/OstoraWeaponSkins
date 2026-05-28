@@ -259,22 +259,24 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
     {
         if (!entity.DesignerName.Contains("weapon")) return;
 
-        LogDebug($"[OstoraWeaponSkins] Entity spawned: {entity.DesignerName}");
+        string designerName = entity.DesignerName;
+
+        LogDebug($"[OstoraWeaponSkins] Entity spawned: {designerName}");
 
         Core.Scheduler.NextWorldUpdate(() =>
         {
             try
             {
-                LogDebug($"[OstoraWeaponSkins] NextWorldUpdate: checking {entity.DesignerName}");
+                LogDebug($"[OstoraWeaponSkins] NextWorldUpdate: checking {designerName}");
 
                 if (entity is not CBaseEntity baseEntity || !baseEntity.IsValid)
                 {
-                    LogDebug($"[OstoraWeaponSkins] NextWorldUpdate: {entity.DesignerName} is not CBaseEntity or invalid");
+                    LogDebug($"[OstoraWeaponSkins] NextWorldUpdate: {designerName} is not CBaseEntity or invalid");
                     return;
                 }
 
                 var ownerHandle = baseEntity.OwnerEntity;
-                LogDebug($"[OstoraWeaponSkins] NextWorldUpdate: {entity.DesignerName} ownerHandle valid={ownerHandle.IsValid}");
+                LogDebug($"[OstoraWeaponSkins] NextWorldUpdate: {designerName} ownerHandle valid={ownerHandle.IsValid}");
                 if (!ownerHandle.IsValid) return;
 
                 // OwnerEntity is the pawn, not the controller. Use GetPlayerFromPawn.
@@ -283,7 +285,7 @@ public sealed partial class OstoraWeaponSkins : BasePlugin
                     var p = Core.PlayerManager.GetPlayerFromPawn(pawn);
                     if (p != null)
                     {
-                        LogDebug($"[OstoraWeaponSkins] NextWorldUpdate: Applying skin to {p.Name}'s {entity.DesignerName}");
+                        LogDebug($"[OstoraWeaponSkins] NextWorldUpdate: Applying skin to {p.Name}'s {designerName}");
                         GivePlayerWeaponSkin(p, entity);
                     }
                 }
